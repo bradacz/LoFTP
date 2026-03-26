@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>LoFTP Icon Design — Varianta A</title>
+<style>
+  body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: #1a1a2e;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    color: #fff;
+    gap: 40px;
+  }
+  h1 { font-size: 18px; font-weight: 500; opacity: 0.7; letter-spacing: 1px; }
+  .icon-row {
+    display: flex;
+    gap: 48px;
+    align-items: end;
+  }
+  .icon-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .icon-box span {
+    font-size: 12px;
+    opacity: 0.5;
+  }
+  .bg-light {
+    background: #f5f0e8;
+    padding: 32px;
+    border-radius: 20px;
+  }
+  .bg-light h1 { color: #333; }
+</style>
+</head>
+<body>
+
+<h1>LoFTP — ICON VARIANTA A</h1>
+
+<!-- Dark background previews -->
+<div class="icon-row">
+  <div class="icon-box">
+    <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0f2b46"/>
+          <stop offset="50%" stop-color="#0d1b2a"/>
+          <stop offset="100%" stop-color="#1a3a5c"/>
+        </linearGradient>
+        <linearGradient id="folder-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#64ffda" stop-opacity="0.9"/>
+          <stop offset="100%" stop-color="#3db89a" stop-opacity="0.9"/>
+        </linearGradient>
+        <linearGradient id="arrow-up" x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0%" stop-color="#64ffda"/>
+          <stop offset="100%" stop-color="#a0ffe8"/>
+        </linearGradient>
+        <linearGradient id="arrow-down" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#4ea8de"/>
+          <stop offset="100%" stop-color="#2d6fa3"/>
+        </linearGradient>
+        <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+          <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000" flood-opacity="0.4"/>
+        </filter>
+        <filter id="inner-glow">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="6" result="blur"/>
+          <feFlood flood-color="#64ffda" flood-opacity="0.15"/>
+          <feComposite in2="blur" operator="in"/>
+          <feMerge>
+            <feMergeNode/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+
+      <!-- Rounded square background (macOS style) -->
+      <rect x="16" y="16" width="480" height="480" rx="110" ry="110" fill="url(#bg)" filter="url(#shadow)"/>
+
+      <!-- Subtle border -->
+      <rect x="16" y="16" width="480" height="480" rx="110" ry="110" fill="none" stroke="#64ffda" stroke-opacity="0.12" stroke-width="2"/>
+
+      <!-- Folder body -->
+      <g filter="url(#inner-glow)">
+        <!-- Folder back -->
+        <path d="M 120 175 L 120 380 Q 120 395 135 395 L 377 395 Q 392 395 392 380 L 392 195 Q 392 180 377 180 L 270 180 L 245 155 Q 238 148 228 148 L 135 148 Q 120 148 120 163 Z"
+              fill="none" stroke="url(#folder-grad)" stroke-width="8" stroke-linejoin="round"/>
+
+        <!-- Folder tab -->
+        <path d="M 120 175 L 392 175"
+              stroke="url(#folder-grad)" stroke-width="4" stroke-opacity="0.3"/>
+      </g>
+
+      <!-- Arrow UP (upload) -->
+      <g transform="translate(206, 210)">
+        <path d="M 25 80 L 25 30 M 25 30 L 5 50 M 25 30 L 45 50"
+              fill="none" stroke="url(#arrow-up)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+
+      <!-- Arrow DOWN (download) -->
+      <g transform="translate(276, 235)">
+        <path d="M 25 0 L 25 50 M 25 50 L 5 30 M 25 50 L 45 30"
+              fill="none" stroke="url(#arrow-down)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+
+      <!-- Subtle dot pattern for depth -->
+      <circle cx="150" cy="350" r="2" fill="#64ffda" opacity="0.15"/>
+      <circle cx="170" cy="360" r="1.5" fill="#64ffda" opacity="0.1"/>
+      <circle cx="360" cy="340" r="2" fill="#4ea8de" opacity="0.15"/>
+      <circle cx="340" cy="355" r="1.5" fill="#4ea8de" opacity="0.1"/>
+    </svg>
+    <span>512 × 512</span>
+  </div>
+
+  <div class="icon-box">
+    <svg width="256" height="256" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0f2b46"/>
+          <stop offset="50%" stop-color="#0d1b2a"/>
+          <stop offset="100%" stop-color="#1a3a5c"/>
+        </linearGradient>
+        <linearGradient id="fg2" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#64ffda" stop-opacity="0.9"/>
+          <stop offset="100%" stop-color="#3db89a" stop-opacity="0.9"/>
+        </linearGradient>
+        <linearGradient id="au2" x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0%" stop-color="#64ffda"/>
+          <stop offset="100%" stop-color="#a0ffe8"/>
+        </linearGradient>
+        <linearGradient id="ad2" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#4ea8de"/>
+          <stop offset="100%" stop-color="#2d6fa3"/>
+        </linearGradient>
+      </defs>
+      <rect x="16" y="16" width="480" height="480" rx="110" ry="110" fill="url(#bg2)"/>
+      <rect x="16" y="16" width="480" height="480" rx="110" ry="110" fill="none" stroke="#64ffda" stroke-opacity="0.12" stroke-width="2"/>
+      <path d="M 120 175 L 120 380 Q 120 395 135 395 L 377 395 Q 392 395 392 380 L 392 195 Q 392 180 377 180 L 270 180 L 245 155 Q 238 148 228 148 L 135 148 Q 120 148 120 163 Z"
+            fill="none" stroke="url(#fg2)" stroke-width="8" stroke-linejoin="round"/>
+      <path d="M 120 175 L 392 175" stroke="url(#fg2)" stroke-width="4" stroke-opacity="0.3"/>
+      <g transform="translate(206, 210)">
+        <path d="M 25 80 L 25 30 M 25 30 L 5 50 M 25 30 L 45 50"
+              fill="none" stroke="url(#au2)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g transform="translate(276, 235)">
+        <path d="M 25 0 L 25 50 M 25 50 L 5 30 M 25 50 L 45 30"
+              fill="none" stroke="url(#ad2)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </svg>
+    <span>256 × 256 (dock)</span>
+  </div>
+
+  <div class="icon-box">
+    <svg width="128" height="128" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0f2b46"/>
+          <stop offset="50%" stop-color="#0d1b2a"/>
+          <stop offset="100%" stop-color="#1a3a5c"/>
+        </linearGradient>
+        <linearGradient id="fg3" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#64ffda" stop-opacity="0.9"/>
+          <stop offset="100%" stop-color="#3db89a" stop-opacity="0.9"/>
+        </linearGradient>
+        <linearGradient id="au3" x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0%" stop-color="#64ffda"/>
+          <stop offset="100%" stop-color="#a0ffe8"/>
+        </linearGradient>
+        <linearGradient id="ad3" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#4ea8de"/>
+          <stop offset="100%" stop-color="#2d6fa3"/>
+        </linearGradient>
+      </defs>
+      <rect x="16" y="16" width="480" height="480" rx="110" ry="110" fill="url(#bg3)"/>
+      <rect x="16" y="16" width="480" height="480" rx="110" ry="110" fill="none" stroke="#64ffda" stroke-opacity="0.12" stroke-width="3"/>
+      <path d="M 120 175 L 120 380 Q 120 395 135 395 L 377 395 Q 392 395 392 380 L 392 195 Q 392 180 377 180 L 270 180 L 245 155 Q 238 148 228 148 L 135 148 Q 120 148 120 163 Z"
+            fill="none" stroke="url(#fg3)" stroke-width="12" stroke-linejoin="round"/>
+      <g transform="translate(206, 210)">
+        <path d="M 25 80 L 25 30 M 25 30 L 5 50 M 25 30 L 45 50"
+              fill="none" stroke="url(#au3)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g transform="translate(276, 235)">
+        <path d="M 25 0 L 25 50 M 25 50 L 5 30 M 25 50 L 45 30"
+              fill="none" stroke="url(#ad3)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </svg>
+    <span>128 × 128</span>
+  </div>
+
+  <div class="icon-box">
+    <svg width="64" height="64" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg4" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0f2b46"/>
+          <stop offset="50%" stop-color="#0d1b2a"/>
+          <stop offset="100%" stop-color="#1a3a5c"/>
+        </linearGradient>
+        <linearGradient id="fg4" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#64ffda"/>
+          <stop offset="100%" stop-color="#3db89a"/>
+        </linearGradient>
+        <linearGradient id="au4" x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0%" stop-color="#64ffda"/>
+          <stop offset="100%" stop-color="#a0ffe8"/>
+        </linearGradient>
+        <linearGradient id="ad4" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#4ea8de"/>
+          <stop offset="100%" stop-color="#2d6fa3"/>
+        </linearGradient>
+      </defs>
+      <rect x="16" y="16" width="480" height="480" rx="110" ry="110" fill="url(#bg4)"/>
+      <path d="M 120 175 L 120 380 Q 120 395 135 395 L 377 395 Q 392 395 392 380 L 392 195 Q 392 180 377 180 L 270 180 L 245 155 Q 238 148 228 148 L 135 148 Q 120 148 120 163 Z"
+            fill="none" stroke="url(#fg4)" stroke-width="18" stroke-linejoin="round"/>
+      <g transform="translate(206, 210)">
+        <path d="M 25 80 L 25 30 M 25 30 L 5 50 M 25 30 L 45 50"
+              fill="none" stroke="url(#au4)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g transform="translate(276, 235)">
+        <path d="M 25 0 L 25 50 M 25 50 L 5 30 M 25 50 L 45 30"
+              fill="none" stroke="url(#ad4)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </svg>
+    <span>64 × 64</span>
+  </div>
+
+  <div class="icon-box">
+    <svg width="32" height="32" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <rect x="16" y="16" width="480" height="480" rx="110" ry="110" fill="#0d1b2a"/>
+      <path d="M 120 175 L 120 380 Q 120 395 135 395 L 377 395 Q 392 395 392 380 L 392 195 Q 392 180 377 180 L 270 180 L 245 155 Q 238 148 228 148 L 135 148 Q 120 148 120 163 Z"
+            fill="none" stroke="#64ffda" stroke-width="24" stroke-linejoin="round"/>
+      <g transform="translate(206, 215)">
+        <path d="M 25 75 L 25 30 M 25 30 L 8 47 M 25 30 L 42 47"
+              fill="none" stroke="#64ffda" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g transform="translate(276, 235)">
+        <path d="M 25 0 L 25 45 M 25 45 L 8 28 M 25 45 L 42 28"
+              fill="none" stroke="#4ea8de" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </svg>
+    <span>32 × 32</span>
+  </div>
+</div>
+
+<!-- Light background preview -->
+<div class="bg-light">
+  <h1 style="margin: 0 0 20px; text-align: center;">Na svetlem pozadi</h1>
+  <div class="icon-row">
+    <div class="icon-box">
+      <svg width="256" height="256" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="bgL" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#0f2b46"/>
+            <stop offset="50%" stop-color="#0d1b2a"/>
+            <stop offset="100%" stop-color="#1a3a5c"/>
+          </linearGradient>
+          <linearGradient id="fgL" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#64ffda" stop-opacity="0.9"/>
+            <stop offset="100%" stop-color="#3db89a" stop-opacity="0.9"/>
+          </linearGradient>
+          <linearGradient id="auL" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0%" stop-color="#64ffda"/>
+            <stop offset="100%" stop-color="#a0ffe8"/>
+          </linearGradient>
+          <linearGradient id="adL" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#4ea8de"/>
+            <stop offset="100%" stop-color="#2d6fa3"/>
+          </linearGradient>
+          <filter id="shadowL" x="-10%" y="-10%" width="120%" height="130%">
+            <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.2"/>
+          </filter>
+        </defs>
+        <rect x="16" y="16" width="480" height="480" rx="110" ry="110" fill="url(#bgL)" filter="url(#shadowL)"/>
+        <rect x="16" y="16" width="480" height="480" rx="110" ry="110" fill="none" stroke="#64ffda" stroke-opacity="0.12" stroke-width="2"/>
+        <path d="M 120 175 L 120 380 Q 120 395 135 395 L 377 395 Q 392 395 392 380 L 392 195 Q 392 180 377 180 L 270 180 L 245 155 Q 238 148 228 148 L 135 148 Q 120 148 120 163 Z"
+              fill="none" stroke="url(#fgL)" stroke-width="8" stroke-linejoin="round"/>
+        <path d="M 120 175 L 392 175" stroke="url(#fgL)" stroke-width="4" stroke-opacity="0.3"/>
+        <g transform="translate(206, 210)">
+          <path d="M 25 80 L 25 30 M 25 30 L 5 50 M 25 30 L 45 50"
+                fill="none" stroke="url(#auL)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+        <g transform="translate(276, 235)">
+          <path d="M 25 0 L 25 50 M 25 50 L 5 30 M 25 50 L 45 30"
+                fill="none" stroke="url(#adL)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+      </svg>
+      <span style="color:#666">256 × 256</span>
+    </div>
+    <div class="icon-box">
+      <svg width="128" height="128" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <rect x="16" y="16" width="480" height="480" rx="110" ry="110" fill="#0d1b2a"/>
+        <path d="M 120 175 L 120 380 Q 120 395 135 395 L 377 395 Q 392 395 392 380 L 392 195 Q 392 180 377 180 L 270 180 L 245 155 Q 238 148 228 148 L 135 148 Q 120 148 120 163 Z"
+              fill="none" stroke="#64ffda" stroke-width="12" stroke-linejoin="round"/>
+        <g transform="translate(206, 210)">
+          <path d="M 25 80 L 25 30 M 25 30 L 5 50 M 25 30 L 45 50"
+                fill="none" stroke="#64ffda" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+        <g transform="translate(276, 235)">
+          <path d="M 25 0 L 25 50 M 25 50 L 5 30 M 25 50 L 45 30"
+                fill="none" stroke="#4ea8de" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+      </svg>
+      <span style="color:#666">128 × 128</span>
+    </div>
+    <div class="icon-box">
+      <svg width="64" height="64" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <rect x="16" y="16" width="480" height="480" rx="110" ry="110" fill="#0d1b2a"/>
+        <path d="M 120 175 L 120 380 Q 120 395 135 395 L 377 395 Q 392 395 392 380 L 392 195 Q 392 180 377 180 L 270 180 L 245 155 Q 238 148 228 148 L 135 148 Q 120 148 120 163 Z"
+              fill="none" stroke="#64ffda" stroke-width="18" stroke-linejoin="round"/>
+        <g transform="translate(206, 210)">
+          <path d="M 25 80 L 25 30 M 25 30 L 5 50 M 25 30 L 45 50"
+                fill="none" stroke="#64ffda" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+        <g transform="translate(276, 235)">
+          <path d="M 25 0 L 25 50 M 25 50 L 5 30 M 25 50 L 45 30"
+                fill="none" stroke="#4ea8de" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+      </svg>
+      <span style="color:#666">64 × 64</span>
+    </div>
+  </div>
+</div>
+
+<p style="opacity:0.3; font-size:12px; margin-top:20px;">Barvy: pozadi #0d1b2a · folder #64ffda · stazeni #4ea8de</p>
+
+</body>
+</html>

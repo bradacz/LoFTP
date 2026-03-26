@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>LoFTP — About & Settings Redesign</title>
+<style>
+  :root {
+    /* Dark theme tokens */
+    --bg: #0d1b2a;
+    --card: #111d2e;
+    --card-elevated: #162436;
+    --border: rgba(100, 255, 218, 0.08);
+    --border-strong: rgba(100, 255, 218, 0.15);
+    --text: #e0e6ed;
+    --text-muted: #6b7f95;
+    --text-dim: #4a5f75;
+    --primary: #4ea8de;
+    --primary-hover: #5bb8ee;
+    --accent: #64ffda;
+    --success: #4ade80;
+    --danger: #f87171;
+    --surface: rgba(255,255,255, 0.03);
+    --surface-hover: rgba(255,255,255, 0.06);
+    --input-bg: #0a1420;
+    --shadow: 0 24px 48px rgba(0,0,0,0.4), 0 0 0 1px rgba(100,255,218,0.06);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
+    background: #0a0f18;
+    color: var(--text);
+    display: flex;
+    gap: 48px;
+    padding: 60px;
+    justify-content: center;
+    align-items: start;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .dialog {
+    width: 420px;
+    background: var(--card);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  /* =================== ABOUT =================== */
+  .about-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 32px 20px;
+    background: linear-gradient(180deg, rgba(78,168,222,0.06) 0%, transparent 100%);
+  }
+  .about-hero img {
+    width: 72px; height: 72px;
+    border-radius: 18px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3), 0 0 0 1px rgba(100,255,218,0.1);
+  }
+  .about-hero h2 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    margin-top: 16px;
+    color: var(--text);
+  }
+  .about-hero .version {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .about-hero .desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-align: center;
+    line-height: 1.6;
+    margin-top: 12px;
+    max-width: 300px;
+  }
+
+  .about-body {
+    padding: 0 24px 24px;
+  }
+
+  /* Shared card row style */
+  .info-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+
+  .links-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 4px 0;
+  }
+  .links-row a {
+    font-size: 12px;
+    color: var(--primary);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .links-row a:hover { color: var(--primary-hover); text-decoration: underline; }
+  .links-row .sep { color: var(--text-dim); font-size: 10px; }
+  .copyright {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-align: center;
+    margin-bottom: 6px;
+  }
+
+  /* Legal links as subtle inline */
+  .legal-row {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    padding: 2px 0 4px;
+  }
+  .legal-row button {
+    font-size: 11px;
+    color: var(--text-dim);
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    transition: all 0.15s;
+  }
+  .legal-row button:hover {
+    color: var(--text-muted);
+    text-decoration-color: var(--text-muted);
+  }
+
+  /* Update section */
+  .update-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .update-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .update-header .label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .update-header .status {
+    font-size: 11px;
+    color: var(--success);
+    font-weight: 500;
+  }
+  .update-actions {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+  }
+
+  /* =================== SETTINGS =================== */
+  .settings-header {
+    padding: 24px 24px 4px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .settings-header .icon-wrap {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(78,168,222,0.15), rgba(100,255,218,0.08));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+  .settings-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.2px;
+  }
+
+  .settings-body {
+    padding: 16px 24px 24px;
+  }
+
+  /* Settings sections */
+  .setting-group {
+    margin-bottom: 20px;
+  }
+  .setting-group:last-child { margin-bottom: 0; }
+  .setting-group-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 10px;
+    padding-left: 2px;
+  }
+
+  /* Activation card */
+  .activation-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .activation-card.activated {
+    border-color: rgba(74, 222, 128, 0.15);
+    background: rgba(74, 222, 128, 0.04);
+  }
+  .activation-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--success);
+  }
+  .activation-status .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.4);
+  }
+  .activation-key {
+    font-size: 10px;
+    color: var(--text-dim);
+    font-family: 'SF Mono', 'Menlo', monospace;
+    margin-top: 6px;
+    padding-left: 14px;
+  }
+
+  .activation-input-row {
+    display: flex;
+    gap: 8px;
+  }
+  .activation-input-row input {
+    flex: 1;
+    padding: 7px 12px;
+    font-size: 12px;
+    font-family: 'SF Mono', 'Menlo', monospace;
+    background: var(--input-bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .activation-input-row input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(78, 168, 222, 0.15);
+  }
+  .activation-input-row input::placeholder { color: var(--text-dim); }
+
+  /* Theme selector */
+  .theme-row {
+    display: flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 3px;
+  }
+  .theme-option {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: none;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: var(--text-muted);
+    background: transparent;
+  }
+  .theme-option.active {
+    background: var(--card-elevated);
+    color: var(--text);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2), 0 0 0 1px var(--border-strong);
+  }
+  .theme-option:not(.active):hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+  .theme-option svg {
+    width: 14px; height: 14px;
+    opacity: 0.7;
+  }
+  .theme-option.active svg { opacity: 1; }
+
+  /* Language grid */
+  .lang-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px;
+  }
+  .lang-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 4px;
+    border-radius: 8px;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: transparent;
+    position: relative;
+  }
+  .lang-btn .lang-code {
+    font-size: 9px;
+    color: var(--text-dim);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .lang-btn.active {
+    background: var(--card-elevated);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2), 0 0 0 1px var(--border-strong);
+  }
+  .lang-btn.active .lang-code { color: var(--text-muted); }
+  .lang-btn:not(.active):hover {
+    background: var(--surface-hover);
+  }
+
+  /* =================== SHARED =================== */
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 7px 16px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  }
+  .btn-primary:hover { background: var(--primary-hover); box-shadow: 0 2px 6px rgba(78,168,222,0.3); }
+  .btn-primary:disabled { opacity: 0.4; cursor: default; }
+
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--text-muted);
+    border: 1px solid var(--border-strong);
+  }
+  .btn-secondary:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+    border-color: rgba(100,255,218,0.2);
+  }
+
+  .btn-close {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+    min-width: 100px;
+    font-weight: 500;
+  }
+  .btn-close:hover {
+    background: var(--surface-hover);
+    border-color: rgba(100,255,218,0.2);
+  }
+
+  /* Footer */
+  .dialog-footer {
+    display: flex;
+    justify-content: center;
+    padding: 0 24px 20px;
+  }
+
+  /* Divider */
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0 24px;
+  }
+
+  /* Label above dialog */
+  .preview-label {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 16px;
+    font-weight: 600;
+  }
+  .column { display: flex; flex-direction: column; }
+</style>
+</head>
+<body>
+
+<!-- ===== ABOUT DIALOG ===== -->
+<div class="column">
+  <div class="preview-label">About</div>
+  <div class="dialog">
+    <div class="about-hero">
+      <img src="../public/app-icon.png" alt="LoFTP" />
+      <h2>LoFTP</h2>
+      <span class="version">Verze 1.0.0</span>
+      <p class="desc">
+        Desktop FTP/SFTP klient pro macOS se zaměřením na rychlou správu
+        souborů a přenosů.
+      </p>
+    </div>
+
+    <div class="about-body">
+      <div class="info-card">
+        <p class="copyright">&copy; 2024 Localio. Všechna práva vyhrazena.</p>
+        <div class="links-row">
+          <a href="#">www.mylocalio.com</a>
+          <span class="sep">&middot;</span>
+          <a href="#">www.loftp.space</a>
+        </div>
+        <div class="legal-row">
+          <button>Licenční podmínky</button>
+          <button>Ochrana soukromí</button>
+        </div>
+      </div>
+
+      <div class="update-section">
+        <div class="update-header">
+          <span class="label">Aktualizace</span>
+          <span class="status">&#10003; Nejnovější verze</span>
+        </div>
+        <div class="update-actions">
+          <button class="btn btn-secondary" style="flex:1">Zkontrolovat</button>
+          <button class="btn btn-primary" style="flex:1" disabled>Nainstalovat</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dialog-footer">
+      <button class="btn btn-close">Zavřít</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SETTINGS DIALOG ===== -->
+<div class="column">
+  <div class="preview-label">Nastavení</div>
+  <div class="dialog">
+    <div class="settings-header">
+      <div class="icon-wrap">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary)">
+          <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+      </div>
+      <h3>Nastavení</h3>
+    </div>
+
+    <div class="settings-body">
+      <!-- Activation -->
+      <div class="setting-group">
+        <div class="setting-group-label">Licence</div>
+
+        <!-- Activated state -->
+        <div class="activation-card activated">
+          <div class="activation-status">
+            <span class="dot"></span>
+            Plná verze aktivována
+          </div>
+          <div class="activation-key">ABCD-LIFE-1234-5678-90AB...</div>
+        </div>
+
+        <!-- Not activated state (alternative) -->
+        <!--
+        <div class="activation-card">
+          <div class="activation-input-row">
+            <input type="text" placeholder="XXXX-LIFE-XXXX-XXXX" />
+            <button class="btn btn-primary">Aktivovat</button>
+          </div>
+        </div>
+        -->
+      </div>
+
+      <!-- Theme -->
+      <div class="setting-group">
+        <div class="setting-group-label">Vzhled</div>
+        <div class="theme-row">
+          <button class="theme-option">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+            Light
+          </button>
+          <button class="theme-option active">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <!-- Language -->
+      <div class="setting-group">
+        <div class="setting-group-label">Jazyk</div>
+        <div class="lang-grid">
+          <button class="lang-btn active">
+            <span>🇨🇿</span>
+            <span class="lang-code">cs</span>
+          </button>
+          <button class="lang-btn">
+            <span>🇬🇧</span>
+            <span class="lang-code">en</span>
+          </button>
+          <button class="lang-btn">
+            <span>🇩🇪</span>
+            <span class="lang-code">de</span>
+          </button>
+          <button class="lang-btn">
+            <span>🇸🇰</span>
+            <span class="lang-code">sk</span>
+          </button>
+          <button class="lang-btn">
+            <span>🇵🇱</span>
+            <span class="lang-code">pl</span>
+          </button>
+          <button class="lang-btn">
+            <span>🇫🇷</span>
+            <span class="lang-code">fr</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dialog-footer">
+      <button class="btn btn-close">Zavřít</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

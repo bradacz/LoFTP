@@ -1,0 +1,149 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light mode — warm beige/cream from screenshot */
+    --background: 38 33% 92%;
+    --foreground: 30 10% 20%;
+
+    --card: 38 30% 95%;
+    --card-foreground: 30 10% 20%;
+
+    --popover: 38 30% 95%;
+    --popover-foreground: 30 10% 20%;
+
+    --primary: 213 60% 45%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 38 25% 86%;
+    --secondary-foreground: 30 10% 25%;
+
+    --muted: 38 20% 88%;
+    --muted-foreground: 30 10% 45%;
+
+    --accent: 213 50% 90%;
+    --accent-foreground: 213 70% 30%;
+
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 38 20% 78%;
+    --input: 38 20% 78%;
+    --ring: 213 60% 50%;
+
+    --radius: 0.5rem;
+
+    /* FTP App tokens — light warm */
+    --panel-bg: 38 30% 95%;
+    --panel-header: 38 22% 82%;
+    --toolbar-bg: 38 22% 82%;
+    --toolbar-border: 38 18% 72%;
+    --file-hover: 38 30% 90%;
+    --file-selected: 213 60% 88%;
+    --file-selected-text: 213 80% 30%;
+    --hosting-tab: 38 25% 88%;
+    --hosting-tab-active: 213 60% 45%;
+    --hosting-tab-active-text: 0 0% 100%;
+    --divider: 38 18% 72%;
+    --status-bar: 38 22% 84%;
+    --folder-color: 166 100% 35%;
+    --success: 142 71% 40%;
+    --progress-track: 38 20% 80%;
+
+    --sidebar-background: 38 30% 93%;
+    --sidebar-foreground: 30 10% 25%;
+    --sidebar-primary: 30 10% 20%;
+    --sidebar-primary-foreground: 38 30% 95%;
+    --sidebar-accent: 38 25% 88%;
+    --sidebar-accent-foreground: 30 10% 20%;
+    --sidebar-border: 38 20% 78%;
+    --sidebar-ring: 350 80% 59%;
+  }
+
+  .dark {
+    /* Dark mode — exact match from ui-mockup.html */
+    --background: 240 27% 14%;
+    --foreground: 0 0% 88%;
+
+    --card: 218 42% 20%;
+    --card-foreground: 0 0% 88%;
+
+    --popover: 218 42% 20%;
+    --popover-foreground: 0 0% 88%;
+
+    --primary: 350 80% 59%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 218 42% 20%;
+    --secondary-foreground: 240 20% 69%;
+
+    --muted: 218 42% 20%;
+    --muted-foreground: 222 22% 61%;
+
+    --accent: 350 80% 59%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 350 80% 59%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 29% 23%;
+    --input: 240 29% 23%;
+    --ring: 350 80% 59%;
+
+    /* FTP App tokens — dark from mockup */
+    --panel-bg: 209 53% 11%;
+    --panel-header: 218 42% 20%;
+    --toolbar-bg: 220 45% 16%;
+    --toolbar-border: 240 29% 23%;
+    --file-hover: 222 46% 17%;
+    --file-selected: 213 73% 22%;
+    --file-selected-text: 350 80% 59%;
+    --hosting-tab: 220 45% 16%;
+    --hosting-tab-active: 213 73% 22%;
+    --hosting-tab-active-text: 350 80% 59%;
+    --divider: 213 73% 22%;
+    --status-bar: 218 42% 20%;
+    --folder-color: 166 100% 70%;
+    --success: 166 100% 70%;
+    --progress-track: 222 46% 17%;
+
+    --sidebar-background: 240 27% 12%;
+    --sidebar-foreground: 240 20% 69%;
+    --sidebar-primary: 0 0% 88%;
+    --sidebar-primary-foreground: 240 27% 14%;
+    --sidebar-accent: 218 42% 20%;
+    --sidebar-accent-foreground: 0 0% 88%;
+    --sidebar-border: 240 29% 23%;
+    --sidebar-ring: 350 80% 59%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: inherit;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+  }
+}
+
+@layer utilities {
+  .font-mono-file {
+    font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+  }
+}

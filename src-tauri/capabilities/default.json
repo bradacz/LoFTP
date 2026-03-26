@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nickelpack/npal/main/capability-schema.json",
+  "identifier": "default",
+  "description": "Default permissions for LoFTP",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "shell:allow-open"
+  ]
+}
