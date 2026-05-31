@@ -147,7 +147,7 @@ export function PurchaseDialog({ open: isOpen, onClose }: PurchaseDialogProps) {
 
         <div className="rounded-md bg-secondary/50 border border-border px-3 py-2 flex items-center justify-between text-sm">
           <span className="text-muted-foreground">{t("purchase.lifetimeLicense")}</span>
-          <span className="font-bold text-foreground">29,99 €</span>
+          <span className="font-bold text-foreground">25 €</span>
         </div>
 
         <div className="grid gap-3 py-1">

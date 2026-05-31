@@ -3,6 +3,7 @@ name = "loftp"
 version = "1.0.0"
 description = "FTP/SFTP client for macOS"
 authors = ["LoFTP"]
+license = "MIT"
 edition = "2021"
 
 [lib]
@@ -39,7 +40,13 @@ walkdir = "2"
 zip = "2"
 flate2 = "1"
 tar = "0.4"
+bzip2 = "0.5"
+xz2 = "0.1"
+sevenz-rust2 = "0.12"
+unrar = "0.5"
 libc = "0.2"
+trash = "5"
 tauri-plugin-dialog = "2.6.0"
 shellexpand = "3"
 native-tls = "0.2"
+openssl-sys = { version = "0.9", features = ["vendored"] }

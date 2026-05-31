@@ -1,4 +1,4 @@
-export const copyrightNotice = "© 2026 Localio Labs s.r.o. Všechna práva vyhrazena.";
+export const copyrightNotice = "© 2026 Localio Labs s.r.o. LoFTP je veřejně sdílený projekt.";
 export const websiteUrl = "https://www.mylocalio.com";
 export const productWebsiteUrl = "https://www.loftp.space";
 
@@ -6,29 +6,29 @@ export const eulaSections = [
   {
     heading: "Úvodní ustanovení",
     paragraphs: [
-      "Tato licenční smlouva s koncovým uživatelem (EULA) představuje právně závaznou dohodu mezi vámi a společností Localio Labs s.r.o. týkající se užívání aplikace LoFTP.",
-      "Instalací, spuštěním nebo jakýmkoli užíváním aplikace potvrzujete, že jste se s těmito podmínkami seznámili a souhlasíte s nimi v plném rozsahu.",
+      "Tyto podmínky upravují používání aplikace LoFTP a souvisejících podpůrných služeb poskytovaných společností Localio Labs s.r.o.",
+      "Instalací, spuštěním nebo jakýmkoli užíváním aplikace potvrzujete, že jste se s těmito podmínkami seznámili.",
     ],
   },
   {
-    heading: "Udělení licence",
+    heading: "Projekt a používání aplikace",
     paragraphs: [
-      "LoFTP je distribuována jako shareware — všechny funkce aplikace jsou plně dostupné i bez zakoupené licence. Jediným omezením neaktivované verze je zobrazení informačního okna při každém spuštění.",
-      "Zakoupením a aktivací licenčního klíče získáváte časově neomezenou, nevýhradní a nepřenosnou licenci k užívání aplikace na jednom zařízení. Licence je vázána na konkrétní instalaci a nelze ji převést na jiné zařízení bez předchozí deaktivace.",
+      "LoFTP je veřejně sdílený projekt a jeho zdrojový kód je dostupný na GitHubu.",
+      "Aplikace je plně použitelná i bez aktivace. Platba v aplikaci není podmínkou používání, ale dobrovolným příspěvkem na další vývoj projektu a případné doprovodné aktivační služby.",
     ],
   },
   {
     heading: "Omezení a zakázané jednání",
     paragraphs: [
-      "Uživatel nesmí aplikaci ani její části kopírovat, upravovat, dekompilovat, zpětně analyzovat, redistribuovat, pronajímat, sublicencovat ani obcházet licenční mechanismy.",
-      "Sdílení licenčního klíče s třetími osobami, použití automatizovaných nástrojů ke generování klíčů nebo jakýkoli pokus o narušení licenční infrastruktury je zakázáno a může vést k okamžitému zneplatnění licence.",
+      "Zakázáno je zneužívání platební, aktivační nebo aktualizační infrastruktury aplikace, včetně pokusů o její narušení nebo automatizované generování aktivačních kódů.",
+      "Pokud používáte aktivační klíč nebo jiné doprovodné služby, nesmíte je zneužívat způsobem, který by poškozoval provoz projektu nebo třetí osoby.",
     ],
   },
   {
     heading: "Aktualizace a služby",
     paragraphs: [
       "Společnost Localio Labs si vyhrazuje právo aplikaci průběžně aktualizovat, rozšiřovat nebo upravovat. Aktualizace mohou být distribuovány automaticky a jejich instalace může být vyžadována pro zachování plné funkčnosti.",
-      "Některé služby — včetně ověření licence, nákupu a stahování aktualizací — vyžadují aktivní připojení k internetu. Poskytovatel nezaručuje nepřetržitou dostupnost těchto služeb.",
+      "Některé služby — včetně dobrovolných plateb, aktivačních služeb a stahování aktualizací — vyžadují aktivní připojení k internetu. Poskytovatel nezaručuje nepřetržitou dostupnost těchto služeb.",
     ],
   },
   {
@@ -39,10 +39,10 @@ export const eulaSections = [
     ],
   },
   {
-    heading: "Ukončení licence",
+    heading: "Ukončení používání doprovodných služeb",
     paragraphs: [
-      "Tato licence zůstává v platnosti do okamžiku jejího ukončení. Porušením kteréhokoli ustanovení této smlouvy dochází k automatickému zániku vašich práv vyplývajících z licence.",
-      "Licenci můžete kdykoli ukončit odinstalováním aplikace ze svého zařízení. Po zániku licence nemáte nárok na vrácení uhrazené licenční odměny.",
+      "Používání aplikace můžete kdykoli ukončit jejím odinstalováním ze svého zařízení.",
+      "Při zneužití doprovodných aktivačních nebo platebních služeb může poskytovatel jejich přístup omezit nebo ukončit.",
     ],
   },
   {
@@ -63,14 +63,14 @@ export const privacySections = [
   {
     heading: "Rozsah zpracovávaných údajů",
     paragraphs: [
-      "V rámci nákupu a aktivace licence zpracováváme vaši e-mailovou adresu, licenční klíč, typ zakoupené licence, jedinečný identifikátor instalace a základní technická metadata (verze aplikace, operační systém).",
+      "V rámci dobrovolné platby a případné aktivace zpracováváme vaši e-mailovou adresu, aktivační klíč, typ záznamu o platbě nebo aktivaci, jedinečný identifikátor instalace a základní technická metadata (verze aplikace, operační systém).",
       "Aplikace lokálně ukládá konfiguraci připojení k serverům včetně přihlašovacích údajů. Hesla jsou chráněna prostřednictvím systémového úložiště klíčů (macOS Keychain), pokud je na daném zařízení k dispozici. Tato data neopouštějí vaše zařízení.",
     ],
   },
   {
     heading: "Účel a právní základ zpracování",
     paragraphs: [
-      "Vaše údaje zpracováváme za účelem uzavření a plnění licenční smlouvy, vystavení a doručení licenčního klíče, poskytování zákaznické podpory, distribuce aktualizací a ochrany před neoprávněným užíváním licence.",
+      "Vaše údaje zpracováváme za účelem zpracování dobrovolné platby, vystavení a doručení aktivačního klíče, poskytování zákaznické podpory, distribuce aktualizací a ochrany doprovodných služeb před zneužitím.",
       "Právním základem zpracování je plnění smlouvy (čl. 6 odst. 1 písm. b GDPR), plnění právních povinností (čl. 6 odst. 1 písm. c GDPR) a v odůvodněných případech oprávněný zájem správce (čl. 6 odst. 1 písm. f GDPR).",
     ],
   },
@@ -78,14 +78,14 @@ export const privacySections = [
     heading: "Příjemci a zpracovatelé",
     paragraphs: [
       "Platby jsou zpracovávány prostřednictvím platformy Stripe, Inc. (www.stripe.com), která vystupuje jako nezávislý správce platebních údajů. Poskytovatel nemá přístup k údajům o platebních kartách.",
-      "Doručení licence a provoz podpůrných služeb mohou zajišťovat smluvní zpracovatelé, kteří jsou vázáni povinností mlčenlivosti a odpovídajícími bezpečnostními opatřeními.",
+      "Doručení aktivačního klíče a provoz podpůrných služeb mohou zajišťovat smluvní zpracovatelé, kteří jsou vázáni povinností mlčenlivosti a odpovídajícími bezpečnostními opatřeními.",
       "Přístupové údaje k FTP/SFTP serverům zůstávají výhradně na vašem zařízení a nejsou předávány žádným třetím stranám.",
     ],
   },
   {
     heading: "Doba uchovávání",
     paragraphs: [
-      "Údaje související s licencí uchováváme po dobu trvání smluvního vztahu a následně po dobu vyžadovanou účetními, daňovými a archivačními předpisy (zpravidla 10 let od konce účetního období).",
+      "Údaje související s platbou nebo aktivací uchováváme po dobu trvání smluvního vztahu a následně po dobu vyžadovanou účetními, daňovými a archivačními předpisy (zpravidla 10 let od konce účetního období).",
       "Lokálně uložená data (konfigurace, hesla) zůstávají ve vašem zařízení, dokud je ručně neodstraníte nebo dokud aplikaci neodinstalujete.",
     ],
   },
