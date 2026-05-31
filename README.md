@@ -40,8 +40,11 @@ LoFTP already includes practical integrations for development-oriented workflows
 
 - AI-assisted file explanation, search, and compare review inside the application
 - Codex-assisted explain, compare, sync, and transfer review flows
-- Local Codex control and MCP groundwork for working with saved LoFTP hostings without exposing credentials in chat
 - Direct opening of selected local files and folders in VS Code
+
+Planned next step for Codex-oriented workflows:
+
+- a local control API / Codex add-on layer for working with saved LoFTP hostings without exposing credentials in chat
 
 ## Notes About Current Behavior
 
