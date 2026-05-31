@@ -28,10 +28,20 @@ LoFTP is a dual-pane file manager for macOS built for working with both local an
 - ZIP archive creation from selected local files
 - Quick view for text, images, PDF files, and binary files in hex mode
 - Built-in text editor for local text files
+- Open selected local files and folders directly in VS Code
 - Quick access to mounted volumes, iCloud, and common CloudStorage folders on macOS
 - Light and dark themes
 - Interface localization in English, Czech, German, Slovak, Polish, and Spanish
 - In-app update checks and installation flow through Tauri updater
+
+## AI, Codex, And VS Code Integration
+
+LoFTP already includes practical integrations for development-oriented workflows:
+
+- AI-assisted file explanation, search, and compare review inside the application
+- Codex-assisted explain, compare, sync, and transfer review flows
+- Local Codex control and MCP groundwork for working with saved LoFTP hostings without exposing credentials in chat
+- Direct opening of selected local files and folders in VS Code
 
 ## Notes About Current Behavior
 
