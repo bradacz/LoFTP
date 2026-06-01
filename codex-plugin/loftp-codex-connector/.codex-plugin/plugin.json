@@ -1,6 +1,6 @@
 {
   "name": "loftp-codex-connector",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Connect Codex to the local LoFTP bridge without exposing saved FTP, SFTP, or Bunny credentials.",
   "author": {
     "name": "Bradacz",

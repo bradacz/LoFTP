@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 
+const BRIDGE_REQUEST_TIMEOUT_MS = 2500;
+
 const TOOL_DEFINITIONS = [
   tool("loftp_get_status", "Check whether the local LoFTP bridge is reachable.", {}),
   tool("loftp_list_hostings", "List saved LoFTP hostings without credentials.", {}),
@@ -116,13 +118,17 @@ function readConfig() {
 
 async function callLoftp(toolName, args) {
   const config = readConfig();
+  const signal = typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+    ? AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS)
+    : undefined;
   const response = await fetch(`${config.bridgeUrl.replace(/\/$/, "")}/${toolName}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-loftp-token": config.token
     },
-    body: JSON.stringify(args || {})
+    body: JSON.stringify(args || {}),
+    signal
   });
   const text = await response.text();
   let payload;
@@ -135,6 +141,22 @@ async function callLoftp(toolName, args) {
     throw new Error(payload?.error || `LoFTP bridge returned HTTP ${response.status}`);
   }
   return payload;
+}
+
+async function runSmokeTest() {
+  const status = await callLoftp("loftp_get_status", {});
+  const names = TOOL_DEFINITIONS.map((entry) => entry.name);
+  for (const expected of ["loftp_create_upload_plan", "loftp_get_change_report", "loftp_explain_build_error"]) {
+    if (!names.includes(expected)) {
+      throw new Error(`Missing LoFTP MCP tool: ${expected}`);
+    }
+  }
+  console.log(JSON.stringify({
+    ok: true,
+    bridgeOk: Boolean(status?.ok),
+    toolCount: TOOL_DEFINITIONS.length,
+    tools: names
+  }));
 }
 
 function send(message) {
@@ -156,7 +178,7 @@ async function handle(message) {
       result(id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "loftp-codex-connector", version: "0.1.1" }
+        serverInfo: { name: "loftp-codex-connector", version: "0.1.2" }
       });
       return;
     }
@@ -188,11 +210,18 @@ async function handle(message) {
   }
 }
 
-readline.createInterface({ input: process.stdin }).on("line", (line) => {
-  if (!line.trim()) return;
-  try {
-    void handle(JSON.parse(line));
-  } catch (err) {
-    error(null, -32700, err instanceof Error ? err.message : String(err));
-  }
-});
+if (process.argv.includes("--loftp-smoke-test")) {
+  runSmokeTest().catch((err) => {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+  });
+} else {
+  readline.createInterface({ input: process.stdin }).on("line", (line) => {
+    if (!line.trim()) return;
+    try {
+      void handle(JSON.parse(line));
+    } catch (err) {
+      error(null, -32700, err instanceof Error ? err.message : String(err));
+    }
+  });
+}

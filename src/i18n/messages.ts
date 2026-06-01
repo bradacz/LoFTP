@@ -111,6 +111,10 @@ export interface Messages {
     codexConnectorNode: string;
     codexConnectorServer: string;
     codexConnectorConfig: string;
+    codexConnectorMcpConfig: string;
+    codexConnectorMcpCommand: string;
+    codexConnectorMcpSmoke: string;
+    codexConnectorNotTested: string;
     codexConnectorMarketplace: string;
     codexConnectorSecurityNote: string;
     codexConnectorTest: string;
@@ -121,6 +125,7 @@ export interface Messages {
     codexConnectorStatusNeedsConfig: string;
     codexConnectorStatusNeedsBridge: string;
     codexConnectorStatusMissingNode: string;
+    codexConnectorStatusMcpFailed: string;
     codexAvailableProfiles: string;
     codexNoProfiles: string;
     licenseTransfer: string;
@@ -795,6 +800,10 @@ function createMessages(nativeName: string): Messages {
       codexConnectorNode: "Node runtime",
       codexConnectorServer: "MCP server",
       codexConnectorConfig: "Config",
+      codexConnectorMcpConfig: "MCP config",
+      codexConnectorMcpCommand: "MCP command",
+      codexConnectorMcpSmoke: "MCP test",
+      codexConnectorNotTested: "Not tested",
       codexConnectorMarketplace: "Marketplace",
       codexConnectorSecurityNote: "Codex receives profile metadata and file listings only. Passwords, API keys and SSH material stay in LoFTP.",
       codexConnectorTest: "Test connector",
@@ -805,6 +814,7 @@ function createMessages(nativeName: string): Messages {
       codexConnectorStatusNeedsConfig: "Needs config",
       codexConnectorStatusNeedsBridge: "Bridge stopped",
       codexConnectorStatusMissingNode: "Node missing",
+      codexConnectorStatusMcpFailed: "MCP test failed",
       codexAvailableProfiles: "Available profiles",
       codexNoProfiles: "No profiles saved.",
       licenseTransfer: "Transfer license to this computer",
@@ -1290,6 +1300,10 @@ export const messages: Record<Locale, Messages> = {
       codexConnectorNode: "Node runtime",
       codexConnectorServer: "MCP server",
       codexConnectorConfig: "Konfigurace",
+      codexConnectorMcpConfig: "MCP konfigurace",
+      codexConnectorMcpCommand: "MCP příkaz",
+      codexConnectorMcpSmoke: "MCP test",
+      codexConnectorNotTested: "Netestováno",
       codexConnectorMarketplace: "Marketplace",
       codexConnectorSecurityNote: "Codex dostává jen metadata profilů a výpisy souborů. Hesla, API klíče a SSH materiál zůstávají v LoFTP.",
       codexConnectorTest: "Otestovat connector",
@@ -1300,6 +1314,7 @@ export const messages: Record<Locale, Messages> = {
       codexConnectorStatusNeedsConfig: "Chybí konfigurace",
       codexConnectorStatusNeedsBridge: "Bridge neběží",
       codexConnectorStatusMissingNode: "Chybí Node",
+      codexConnectorStatusMcpFailed: "MCP test selhal",
       codexAvailableProfiles: "Dostupné profily",
       codexNoProfiles: "Nejsou uložené žádné profily.",
       licenseTransfer: "Převést licenci na tento počítač",

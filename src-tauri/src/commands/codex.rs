@@ -81,9 +81,39 @@ pub struct CodexConnectorStatus {
     pub mcp_server_exists: bool,
     pub marketplace_valid: bool,
     pub marketplace_entry_exists: bool,
+    pub marketplace_source_valid: bool,
+    pub mcp_config_valid: bool,
+    pub mcp_command: Option<String>,
+    pub mcp_server_script_path: Option<String>,
+    pub mcp_smoke_ok: bool,
+    pub mcp_smoke_message: Option<String>,
     pub connector_config_valid: bool,
     pub node_available: bool,
     pub node_command: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct MarketplaceConnectorState {
+    valid: bool,
+    entry_exists: bool,
+    source_valid: bool,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct McpConfigState {
+    exists: bool,
+    valid: bool,
+    command: Option<String>,
+    args: Vec<String>,
+    server_script_path: Option<PathBuf>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct McpSmokeState {
+    ok: bool,
+    message: String,
 }
 
 pub struct CodexBridgeState {
@@ -353,6 +383,7 @@ pub fn codex_save_bridge_settings(
 
     if sanitized.enabled {
         let token = state.start(app, port)?;
+        write_connector_config(port, &token)?;
         sanitized.running = true;
         sanitized.session_token = Some(token);
     } else {
@@ -373,7 +404,7 @@ pub fn codex_get_connector_status(
     } else {
         settings.port
     });
-    Ok(connector_status(running, port))
+    Ok(connector_status(running, port, false))
 }
 
 #[tauri::command]
@@ -387,7 +418,7 @@ pub fn codex_test_connector(
     } else {
         settings.port
     });
-    Ok(connector_status(running, port))
+    Ok(connector_status(running, port, true))
 }
 
 #[tauri::command]
@@ -395,6 +426,22 @@ pub fn codex_install_connector(
     app: AppHandle,
     state: State<'_, CodexBridgeState>,
 ) -> Result<CodexConnectorStatus, String> {
+    let node_command = find_node_command().ok_or_else(|| {
+        "Node.js runtime was not found. Install Node.js or make it available in PATH before installing the Codex connector."
+            .to_string()
+    })?;
+    let source = find_bundled_connector_source(&app)?;
+    let home = dirs::home_dir().ok_or_else(|| "Home directory not found".to_string())?;
+    let plugin_path = home.join("plugins").join(CODEX_CONNECTOR_PLUGIN_NAME);
+    let marketplace_path = home
+        .join(".agents")
+        .join("plugins")
+        .join("marketplace.json");
+
+    validate_personal_marketplace_can_update(&marketplace_path)?;
+    install_connector_plugin_atomically(&source, &plugin_path, &node_command)?;
+    update_personal_marketplace(&marketplace_path)?;
+
     let mut settings = load_bridge_settings();
     let port = if settings.port == 0 {
         17642
@@ -421,22 +468,8 @@ pub fn codex_install_connector(
         (port, token)
     };
 
-    let node_command = find_node_command().ok_or_else(|| {
-        "Node.js runtime was not found. Install Node.js or make it available in PATH before installing the Codex connector."
-            .to_string()
-    })?;
     write_connector_config(active_port, &active_token)?;
-    let source = find_bundled_connector_source(&app)?;
-    let home = dirs::home_dir().ok_or_else(|| "Home directory not found".to_string())?;
-    let plugin_path = home.join("plugins").join(CODEX_CONNECTOR_PLUGIN_NAME);
-    let marketplace_path = home
-        .join(".agents")
-        .join("plugins")
-        .join("marketplace.json");
-    copy_connector_plugin(&source, &plugin_path)?;
-    write_installed_mcp_config(&plugin_path, &node_command)?;
-    update_personal_marketplace(&marketplace_path)?;
-    Ok(connector_status(true, active_port))
+    Ok(connector_status(true, active_port, true))
 }
 
 #[tauri::command]
@@ -503,7 +536,9 @@ pub fn codex_start_bridge_from_saved_settings(app: AppHandle) {
         } else {
             settings.port
         };
-        let _ = state.start(app.clone(), port);
+        if let Ok(token) = state.start(app.clone(), port) {
+            let _ = write_connector_config(port, &token);
+        }
     }
 }
 
@@ -519,7 +554,7 @@ fn load_bridge_settings() -> CodexBridgeSettings {
         })
 }
 
-fn connector_status(bridge_running: bool, port: u16) -> CodexConnectorStatus {
+fn connector_status(bridge_running: bool, port: u16, run_smoke_test: bool) -> CodexConnectorStatus {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let plugin_path = home.join("plugins").join(CODEX_CONNECTOR_PLUGIN_NAME);
     let marketplace_path = home
@@ -531,31 +566,58 @@ fn connector_status(bridge_running: bool, port: u16) -> CodexConnectorStatus {
         .join(".codex-plugin")
         .join("plugin.json")
         .is_file();
-    let mcp_config_exists = plugin_path.join(".mcp.json").is_file();
-    let mcp_server_exists = plugin_path
-        .join("scripts")
-        .join("loftp-mcp-server.mjs")
-        .is_file();
+    let mcp_config = read_mcp_config_state(&plugin_path);
+    let mcp_config_exists = mcp_config.exists;
+    let mcp_config_valid = mcp_config.valid;
+    let mcp_server_exists = mcp_config
+        .server_script_path
+        .as_ref()
+        .is_some_and(|path| path.is_file());
     let marketplace_state = read_marketplace_connector_state(&marketplace_path);
-    let (marketplace_valid, marketplace_entry_exists, marketplace_error) = match marketplace_state {
-        Ok(entry_exists) => (true, entry_exists, None),
-        Err(error) => (false, false, Some(error)),
-    };
     let connector_config_valid = connector_config_is_valid(&config_path);
     let configured = connector_config_valid;
     let node_command = find_node_command().map(|path| path.to_string_lossy().to_string());
     let node_available = node_command.is_some();
     let bridge_reachable = bridge_is_reachable(port);
+    let smoke_state = if run_smoke_test
+        && plugin_manifest_exists
+        && mcp_config_valid
+        && connector_config_valid
+        && bridge_running
+        && bridge_reachable
+    {
+        run_installed_mcp_smoke_test(&mcp_config)
+    } else {
+        None
+    };
     let installed = plugin_manifest_exists
         && mcp_config_exists
+        && mcp_config_valid
         && mcp_server_exists
-        && marketplace_valid
-        && marketplace_entry_exists;
+        && marketplace_state.valid
+        && marketplace_state.entry_exists
+        && marketplace_state.source_valid;
     let bridge_ready = bridge_running && bridge_reachable;
-    let (status, message) = if !marketplace_valid {
+    let (status, message) = if !marketplace_state.valid {
         (
             "needsRepair",
-            marketplace_error.unwrap_or_else(|| "Codex marketplace file is invalid.".to_string()),
+            marketplace_state
+                .error
+                .clone()
+                .unwrap_or_else(|| "Codex marketplace file is invalid.".to_string()),
+        )
+    } else if !marketplace_state.source_valid && marketplace_state.entry_exists {
+        (
+            "needsRepair",
+            "Codex marketplace entry points to an unexpected plugin path. Run Install / repair connector."
+                .to_string(),
+        )
+    } else if !mcp_config_valid && mcp_config_exists {
+        (
+            "needsRepair",
+            mcp_config.error.clone().unwrap_or_else(|| {
+                "Installed MCP config is invalid. Run Install / repair connector.".to_string()
+            }),
         )
     } else if !installed {
         (
@@ -581,6 +643,16 @@ fn connector_status(bridge_running: bool, port: u16) -> CodexConnectorStatus {
             "LoFTP Codex bridge is not reachable. Enable the bridge or reinstall the connector."
                 .to_string(),
         )
+    } else if let Some(smoke) = &smoke_state {
+        if smoke.ok {
+            (
+                "ready",
+                "Connector is installed, configured, reachable, and MCP smoke test passed."
+                    .to_string(),
+            )
+        } else {
+            ("mcpFailed", smoke.message.clone())
+        }
     } else {
         (
             "ready",
@@ -601,35 +673,93 @@ fn connector_status(bridge_running: bool, port: u16) -> CodexConnectorStatus {
         plugin_manifest_exists,
         mcp_config_exists,
         mcp_server_exists,
-        marketplace_valid,
-        marketplace_entry_exists,
+        marketplace_valid: marketplace_state.valid,
+        marketplace_entry_exists: marketplace_state.entry_exists,
+        marketplace_source_valid: marketplace_state.source_valid,
+        mcp_config_valid,
+        mcp_command: mcp_config.command.clone(),
+        mcp_server_script_path: mcp_config
+            .server_script_path
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string()),
+        mcp_smoke_ok: smoke_state.as_ref().is_some_and(|smoke| smoke.ok),
+        mcp_smoke_message: smoke_state.as_ref().map(|smoke| smoke.message.clone()),
         connector_config_valid,
         node_available,
         node_command,
     }
 }
 
-fn read_marketplace_connector_state(path: &Path) -> Result<bool, String> {
+fn read_marketplace_connector_state(path: &Path) -> MarketplaceConnectorState {
     if !path.exists() {
-        return Ok(false);
+        return MarketplaceConnectorState {
+            valid: true,
+            entry_exists: false,
+            source_valid: false,
+            error: None,
+        };
     }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("Read Codex marketplace file failed: {}", e))?;
-    let value: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("Codex marketplace file is not valid JSON: {}", e))?;
-    let object = value
-        .as_object()
-        .ok_or_else(|| "Codex marketplace file must contain a JSON object.".to_string())?;
-    let plugins = object
-        .get("plugins")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "Codex marketplace file is missing a plugins array.".to_string())?;
-    Ok(plugins.iter().any(|plugin| {
+    let raw = match fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(error) => {
+            return MarketplaceConnectorState {
+                valid: false,
+                entry_exists: false,
+                source_valid: false,
+                error: Some(format!("Read Codex marketplace file failed: {}", error)),
+            };
+        }
+    };
+    let value: Value = match serde_json::from_str::<Value>(&raw) {
+        Ok(value) => value,
+        Err(error) => {
+            return MarketplaceConnectorState {
+                valid: false,
+                entry_exists: false,
+                source_valid: false,
+                error: Some(format!(
+                    "Codex marketplace file is not valid JSON: {}",
+                    error
+                )),
+            };
+        }
+    };
+    let Some(object) = value.as_object() else {
+        return MarketplaceConnectorState {
+            valid: false,
+            entry_exists: false,
+            source_valid: false,
+            error: Some("Codex marketplace file must contain a JSON object.".to_string()),
+        };
+    };
+    let Some(plugins) = object.get("plugins").and_then(Value::as_array) else {
+        return MarketplaceConnectorState {
+            valid: false,
+            entry_exists: false,
+            source_valid: false,
+            error: Some("Codex marketplace file is missing a plugins array.".to_string()),
+        };
+    };
+    let expected_path = format!("./plugins/{}", CODEX_CONNECTOR_PLUGIN_NAME);
+    let connector = plugins.iter().find(|plugin| {
         plugin
             .get("name")
             .and_then(Value::as_str)
             .is_some_and(|name| name == CODEX_CONNECTOR_PLUGIN_NAME)
-    }))
+    });
+    let source_valid = connector.is_some_and(|plugin| {
+        plugin
+            .get("source")
+            .and_then(|source| source.get("path"))
+            .and_then(Value::as_str)
+            .is_some_and(|path| path == expected_path)
+    });
+    MarketplaceConnectorState {
+        valid: true,
+        entry_exists: connector.is_some(),
+        source_valid,
+        error: None,
+    }
 }
 
 fn connector_config_is_valid(path: &Path) -> bool {
@@ -647,6 +777,148 @@ fn connector_config_is_valid(path: &Path) -> bool {
             .get("token")
             .and_then(Value::as_str)
             .is_some_and(|value| !value.trim().is_empty())
+}
+
+fn read_mcp_config_state(plugin_path: &Path) -> McpConfigState {
+    let config_path = plugin_path.join(".mcp.json");
+    if !config_path.is_file() {
+        return McpConfigState {
+            exists: false,
+            valid: false,
+            command: None,
+            args: Vec::new(),
+            server_script_path: None,
+            error: Some("Installed MCP config is missing.".to_string()),
+        };
+    }
+    let raw = match fs::read_to_string(&config_path) {
+        Ok(raw) => raw,
+        Err(error) => {
+            return McpConfigState {
+                exists: true,
+                valid: false,
+                command: None,
+                args: Vec::new(),
+                server_script_path: None,
+                error: Some(format!("Read MCP config failed: {}", error)),
+            };
+        }
+    };
+    let value: Value = match serde_json::from_str::<Value>(&raw) {
+        Ok(value) => value,
+        Err(error) => {
+            return McpConfigState {
+                exists: true,
+                valid: false,
+                command: None,
+                args: Vec::new(),
+                server_script_path: None,
+                error: Some(format!("MCP config is not valid JSON: {}", error)),
+            };
+        }
+    };
+    let command = value
+        .get("mcpServers")
+        .and_then(|servers| servers.get("loftp"))
+        .and_then(|server| server.get("command"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let args: Vec<String> = value
+        .get("mcpServers")
+        .and_then(|servers| servers.get("loftp"))
+        .and_then(|server| server.get("args"))
+        .and_then(Value::as_array)
+        .map(|args| {
+            args.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let server_script_path = args.first().map(|arg| {
+        let path = PathBuf::from(arg);
+        if path.is_absolute() {
+            path
+        } else {
+            plugin_path.join(path)
+        }
+    });
+    let command_valid = command
+        .as_ref()
+        .is_some_and(|command| command_is_available(command));
+    let script_valid = server_script_path
+        .as_ref()
+        .is_some_and(|path| path.is_file());
+    let valid = command_valid && script_valid;
+    let error = if command.is_none() {
+        Some("MCP config is missing command.".to_string())
+    } else if args.is_empty() {
+        Some("MCP config is missing server script argument.".to_string())
+    } else if !command_valid {
+        Some("MCP command is not available on this computer.".to_string())
+    } else if !script_valid {
+        Some("MCP server script path does not exist.".to_string())
+    } else {
+        None
+    };
+    McpConfigState {
+        exists: true,
+        valid,
+        command,
+        args,
+        server_script_path,
+        error,
+    }
+}
+
+fn command_is_available(command: &str) -> bool {
+    let path = Path::new(command);
+    if path.is_absolute() || command.contains(std::path::MAIN_SEPARATOR) {
+        return path.is_file();
+    }
+    let Some(paths) = env::var_os("PATH") else {
+        return false;
+    };
+    env::split_paths(&paths).any(|path| path.join(command).is_file())
+}
+
+fn run_installed_mcp_smoke_test(config: &McpConfigState) -> Option<McpSmokeState> {
+    let command = config.command.as_ref()?;
+    let mut args = config.args.clone();
+    args.push("--loftp-smoke-test".to_string());
+    let output = match Command::new(command).args(&args).output() {
+        Ok(output) => output,
+        Err(error) => {
+            return Some(McpSmokeState {
+                ok: false,
+                message: format!("MCP smoke test could not start: {}", error),
+            });
+        }
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if output.status.success() {
+        let message = serde_json::from_str::<Value>(&stdout)
+            .ok()
+            .and_then(|value| {
+                let tool_count = value.get("toolCount").and_then(Value::as_u64)?;
+                let bridge_ok = value.get("bridgeOk").and_then(Value::as_bool)?;
+                Some(format!(
+                    "MCP smoke test passed: {} tools, bridge ok: {}.",
+                    tool_count, bridge_ok
+                ))
+            })
+            .unwrap_or_else(|| "MCP smoke test passed.".to_string());
+        return Some(McpSmokeState { ok: true, message });
+    }
+    Some(McpSmokeState {
+        ok: false,
+        message: if stderr.is_empty() {
+            format!("MCP smoke test failed: {}", stdout)
+        } else {
+            format!("MCP smoke test failed: {}", stderr)
+        },
+    })
 }
 
 fn bridge_is_reachable(port: u16) -> bool {
@@ -681,6 +953,12 @@ fn find_bundled_connector_source(app: &AppHandle) -> Result<PathBuf, String> {
                 .join(CODEX_CONNECTOR_PLUGIN_NAME),
         );
         candidates.push(resource_dir.join(CODEX_CONNECTOR_PLUGIN_NAME));
+        candidates.push(
+            resource_dir
+                .join("_up_")
+                .join("codex-plugin")
+                .join(CODEX_CONNECTOR_PLUGIN_NAME),
+        );
     }
     if let Ok(current_dir) = std::env::current_dir() {
         candidates.push(
@@ -704,21 +982,67 @@ fn find_bundled_connector_source(app: &AppHandle) -> Result<PathBuf, String> {
                 .join("plugin.json")
                 .is_file()
         })
-        .ok_or_else(|| "Bundled LoFTP Codex connector was not found".to_string())
+        .ok_or_else(|| {
+            "Bundled LoFTP Codex connector was not found in application resources.".to_string()
+        })
 }
 
-fn copy_connector_plugin(source: &Path, destination: &Path) -> Result<(), String> {
+fn install_connector_plugin_atomically(
+    source: &Path,
+    destination: &Path,
+    node_command: &Path,
+) -> Result<(), String> {
     let home_plugins = dirs::home_dir()
         .ok_or_else(|| "Home directory not found".to_string())?
         .join("plugins");
     if !destination.starts_with(&home_plugins) {
         return Err("Refusing to overwrite a path outside ~/plugins".to_string());
     }
-    if destination.exists() {
-        fs::remove_dir_all(destination)
-            .map_err(|e| format!("Remove old Codex connector failed: {}", e))?;
+    let parent = destination
+        .parent()
+        .ok_or_else(|| "Invalid Codex connector destination".to_string())?;
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let timestamp = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let temp_path = parent.join(format!(
+        ".{}.tmp-{}-{}",
+        CODEX_CONNECTOR_PLUGIN_NAME,
+        std::process::id(),
+        timestamp
+    ));
+    let backup_path = parent.join(format!(
+        ".{}.backup-{}-{}",
+        CODEX_CONNECTOR_PLUGIN_NAME,
+        std::process::id(),
+        timestamp
+    ));
+    if temp_path.exists() {
+        fs::remove_dir_all(&temp_path)
+            .map_err(|e| format!("Remove old temporary Codex connector failed: {}", e))?;
     }
-    copy_dir_all(source, destination)
+    copy_dir_all(source, &temp_path)?;
+    write_installed_mcp_config(&temp_path, node_command)?;
+    if destination.exists() {
+        if backup_path.exists() {
+            fs::remove_dir_all(&backup_path)
+                .map_err(|e| format!("Remove old Codex connector backup failed: {}", e))?;
+        }
+        fs::rename(destination, &backup_path)
+            .map_err(|e| format!("Backup old Codex connector failed: {}", e))?;
+    }
+    if let Err(error) = fs::rename(&temp_path, destination) {
+        if backup_path.exists() {
+            let _ = fs::rename(&backup_path, destination);
+        }
+        let _ = fs::remove_dir_all(&temp_path);
+        return Err(format!("Install Codex connector failed: {}", error));
+    }
+    if backup_path.exists() {
+        let _ = fs::remove_dir_all(&backup_path);
+    }
+    Ok(())
 }
 
 fn copy_dir_all(source: &Path, destination: &Path) -> Result<(), String> {
@@ -831,6 +1155,43 @@ fn update_personal_marketplace(path: &Path) -> Result<(), String> {
     }));
     let content = serde_json::to_string_pretty(&marketplace).map_err(|e| e.to_string())?;
     atomic_write(path, content.as_bytes())
+}
+
+fn validate_personal_marketplace_can_update(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let raw =
+        fs::read_to_string(path).map_err(|e| format!("Read Codex marketplace failed: {}", e))?;
+    let value: Value = match serde_json::from_str::<Value>(&raw) {
+        Ok(value) if value.is_object() => value,
+        Ok(_) => {
+            let backup = backup_invalid_marketplace(path)?;
+            return Err(format!(
+                "Codex marketplace must be a JSON object. Existing file was left unchanged and backed up at {}.",
+                backup.to_string_lossy()
+            ));
+        }
+        Err(error) => {
+            let backup = backup_invalid_marketplace(path)?;
+            return Err(format!(
+                "Codex marketplace is not valid JSON: {}. Existing file was left unchanged and backed up at {}.",
+                error,
+                backup.to_string_lossy()
+            ));
+        }
+    };
+    if value
+        .get("plugins")
+        .is_some_and(|plugins| !plugins.is_array())
+    {
+        let backup = backup_invalid_marketplace(path)?;
+        return Err(format!(
+            "Codex marketplace plugins field must be an array. Existing file was left unchanged and backed up at {}.",
+            backup.to_string_lossy()
+        ));
+    }
+    Ok(())
 }
 
 fn backup_invalid_marketplace(path: &Path) -> Result<PathBuf, String> {

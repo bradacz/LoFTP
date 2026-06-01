@@ -202,7 +202,11 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
       const settings = await codexGetBridgeSettings();
       setCodexPort(String(settings.port));
       setCodexSessionToken(settings.sessionToken ?? null);
-      toast.success(t("settings.codexConnectorInstalled"));
+      if (status.status === "ready") {
+        toast.success(t("settings.codexConnectorInstalled"));
+      } else {
+        toast.error(t("settings.codexConnectorTestFailed"), { description: status.message });
+      }
     } catch (error) {
       toast.error(String(error));
     } finally {
@@ -237,6 +241,8 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
         return t("settings.codexConnectorStatusNeedsBridge");
       case "missingNode":
         return t("settings.codexConnectorStatusMissingNode");
+      case "mcpFailed":
+        return t("settings.codexConnectorStatusMcpFailed");
       case "needsRepair":
         return t("settings.codexConnectorStatusNeedsRepair");
       default:
@@ -507,11 +513,16 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                         {codexConnectorStatus && (
                           <div className="grid gap-x-3 gap-y-1 pt-1 sm:grid-cols-2">
                             <span>{t("settings.codexConnectorServer")}: {codexConnectorStatus.mcpServerExists ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}</span>
+                            <span>{t("settings.codexConnectorMcpConfig")}: {codexConnectorStatus.mcpConfigValid ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}</span>
                             <span>{t("settings.codexConnectorConfig")}: {codexConnectorStatus.connectorConfigValid ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}</span>
-                            <span>{t("settings.codexConnectorMarketplace")}: {codexConnectorStatus.marketplaceEntryExists ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}</span>
+                            <span>{t("settings.codexConnectorMarketplace")}: {codexConnectorStatus.marketplaceEntryExists && codexConnectorStatus.marketplaceSourceValid ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}</span>
                             <span>{t("settings.codexConnectorNode")}: {codexConnectorStatus.nodeAvailable ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}</span>
+                            <span>{t("settings.codexConnectorMcpSmoke")}: {codexConnectorStatus.mcpSmokeMessage ? (codexConnectorStatus.mcpSmokeOk ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")) : t("settings.codexConnectorNotTested")}</span>
                           </div>
                         )}
+                        {codexConnectorStatus?.mcpCommand && <div className="truncate">{t("settings.codexConnectorMcpCommand")}: {codexConnectorStatus.mcpCommand}</div>}
+                        {codexConnectorStatus?.mcpServerScriptPath && <div className="truncate">{t("settings.codexConnectorServer")}: {codexConnectorStatus.mcpServerScriptPath}</div>}
+                        {codexConnectorStatus?.mcpSmokeMessage && <div>{codexConnectorStatus.mcpSmokeMessage}</div>}
                       </div>
                       <div className="flex flex-wrap justify-end gap-2">
                         <button
