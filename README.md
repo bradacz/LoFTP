@@ -6,8 +6,6 @@ LoFTP is licensed under the [MIT License](LICENSE). Source code is public, and p
 
 LoFTP started from a simple need: on macOS, I was missing the speed and workflow of Total Commander, and none of the available alternatives felt right for the way I work. So I started building my own file manager, focused on practical day-to-day use instead of feature lists for their own sake.
 
-![LoFTP Screenshot](docs/loftp-main-window.png)
-![LoFTP Screenshot 2](docs/loftp-secondary-window.png)
 
 LoFTP brings a fast dual-pane workflow to macOS and combines local file management with direct access to remote servers in a way that stays efficient, familiar, and immediate.
 
