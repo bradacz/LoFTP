@@ -1,9 +1,11 @@
 use crate::models::file_item::FileItem;
-use crate::models::transfer::{TransferOptions, TransferProgress, TransferStatus};
+use crate::models::transfer::{
+    TransferOptions, TransferProgress, TransferRegistry, TransferStatus,
+};
 use crate::services::sftp_client::SftpSession;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 pub struct SftpState {
     pub sessions: Mutex<HashMap<String, SftpSession>>,
@@ -60,7 +62,8 @@ pub fn sftp_test_connection(
     password: String,
     ssh_key_path: Option<String>,
 ) -> Result<(), String> {
-    let mut session = SftpSession::connect(&host, port, &username, &password, ssh_key_path.as_deref())?;
+    let mut session =
+        SftpSession::connect(&host, port, &username, &password, ssh_key_path.as_deref())?;
     session.list_dir("/")?;
     session.disconnect().ok();
     Ok(())
@@ -688,23 +691,21 @@ fn emit_progress(
     status: TransferStatus,
     snapshot: ProgressSnapshot,
 ) {
-    app.emit(
-        "transfer-progress",
-        TransferProgress {
-            transfer_id: transfer_id.to_string(),
-            file_name: snapshot.file_name,
-            progress,
-            status,
-            bytes_transferred: snapshot.bytes_transferred,
-            total_bytes: snapshot.total_bytes,
-            current_file_name: snapshot.current_file_name,
-            current_file_bytes_transferred: snapshot.current_file_bytes_transferred,
-            current_file_total_bytes: snapshot.current_file_total_bytes,
-            completed_files: snapshot.completed_files,
-            total_files: snapshot.total_files,
-        },
-    )
-    .ok();
+    let payload = TransferProgress {
+        transfer_id: transfer_id.to_string(),
+        file_name: snapshot.file_name,
+        progress,
+        status,
+        bytes_transferred: snapshot.bytes_transferred,
+        total_bytes: snapshot.total_bytes,
+        current_file_name: snapshot.current_file_name,
+        current_file_bytes_transferred: snapshot.current_file_bytes_transferred,
+        current_file_total_bytes: snapshot.current_file_total_bytes,
+        completed_files: snapshot.completed_files,
+        total_files: snapshot.total_files,
+    };
+    app.state::<TransferRegistry>().record(payload.clone());
+    app.emit("transfer-progress", payload).ok();
 }
 
 fn generate_unique_name(path: &str) -> String {

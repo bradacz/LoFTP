@@ -1,9 +1,12 @@
 use crate::models::file_item::FileItem;
-use crate::models::transfer::{CancellationState, TransferOptions, TransferProgress, TransferStatus, is_cancelled};
+use crate::models::transfer::{
+    is_cancelled, CancellationState, TransferOptions, TransferProgress, TransferRegistry,
+    TransferStatus,
+};
 use crate::services::ftp_client::FtpSession;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 pub struct FtpState {
     pub sessions: Mutex<HashMap<String, FtpSession>>,
@@ -60,7 +63,8 @@ pub fn ftp_test_connection(
     password: String,
     use_tls: Option<bool>,
 ) -> Result<(), String> {
-    let mut session = FtpSession::connect(&host, port, &username, &password, use_tls.unwrap_or(false))?;
+    let mut session =
+        FtpSession::connect(&host, port, &username, &password, use_tls.unwrap_or(false))?;
     session.list_dir("/")?;
     session.disconnect().ok();
     Ok(())
@@ -193,23 +197,28 @@ fn do_ftp_upload(
     let mut last_pct: u8 = 0;
 
     let token_ref = cancel_token.map(|t| t.as_ref());
-    let result = session.upload_with_progress_cancel(local_path, remote_path, |sent, total| {
-        let pct = if total > 0 {
-            ((sent as f64 / total as f64) * 100.0) as u8
-        } else {
-            0
-        };
-        if pct >= last_pct + 2 || pct == 100 || sent == 0 {
-            last_pct = pct;
-            emit_progress(
-                &app_c,
-                &tid,
-                pct,
-                TransferStatus::Transferring,
-                ProgressSnapshot::single_file(&fname, sent, total),
-            );
-        }
-    }, token_ref);
+    let result = session.upload_with_progress_cancel(
+        local_path,
+        remote_path,
+        |sent, total| {
+            let pct = if total > 0 {
+                ((sent as f64 / total as f64) * 100.0) as u8
+            } else {
+                0
+            };
+            if pct >= last_pct + 2 || pct == 100 || sent == 0 {
+                last_pct = pct;
+                emit_progress(
+                    &app_c,
+                    &tid,
+                    pct,
+                    TransferStatus::Transferring,
+                    ProgressSnapshot::single_file(&fname, sent, total),
+                );
+            }
+        },
+        token_ref,
+    );
 
     let is_cancelled = cancel_token.map_or(false, |t| is_cancelled(t));
     let status = if is_cancelled {
@@ -352,20 +361,25 @@ fn do_ftp_download(
     );
 
     let token_ref = cancel_token.map(|t| t.as_ref());
-    let result = session.download_with_progress_cancel(remote_path, local_path, |received, total| {
-        let pct = if total > 0 {
-            ((received as f64 / total as f64) * 100.0) as u8
-        } else {
-            0
-        };
-        emit_progress(
-            &app_c,
-            &tid,
-            pct,
-            TransferStatus::Transferring,
-            ProgressSnapshot::single_file(&fname, received, total),
-        );
-    }, token_ref);
+    let result = session.download_with_progress_cancel(
+        remote_path,
+        local_path,
+        |received, total| {
+            let pct = if total > 0 {
+                ((received as f64 / total as f64) * 100.0) as u8
+            } else {
+                0
+            };
+            emit_progress(
+                &app_c,
+                &tid,
+                pct,
+                TransferStatus::Transferring,
+                ProgressSnapshot::single_file(&fname, received, total),
+            );
+        },
+        token_ref,
+    );
 
     let is_cancelled = cancel_token.map_or(false, |t| is_cancelled(t));
     let total_bytes = std::fs::metadata(local_path).map(|m| m.len()).unwrap_or(0);
@@ -735,23 +749,21 @@ fn emit_progress(
     status: TransferStatus,
     snapshot: ProgressSnapshot,
 ) {
-    app.emit(
-        "transfer-progress",
-        TransferProgress {
-            transfer_id: transfer_id.to_string(),
-            file_name: snapshot.file_name,
-            progress,
-            status,
-            bytes_transferred: snapshot.bytes_transferred,
-            total_bytes: snapshot.total_bytes,
-            current_file_name: snapshot.current_file_name,
-            current_file_bytes_transferred: snapshot.current_file_bytes_transferred,
-            current_file_total_bytes: snapshot.current_file_total_bytes,
-            completed_files: snapshot.completed_files,
-            total_files: snapshot.total_files,
-        },
-    )
-    .ok();
+    let payload = TransferProgress {
+        transfer_id: transfer_id.to_string(),
+        file_name: snapshot.file_name,
+        progress,
+        status,
+        bytes_transferred: snapshot.bytes_transferred,
+        total_bytes: snapshot.total_bytes,
+        current_file_name: snapshot.current_file_name,
+        current_file_bytes_transferred: snapshot.current_file_bytes_transferred,
+        current_file_total_bytes: snapshot.current_file_total_bytes,
+        completed_files: snapshot.completed_files,
+        total_files: snapshot.total_files,
+    };
+    app.state::<TransferRegistry>().record(payload.clone());
+    app.emit("transfer-progress", payload).ok();
 }
 
 fn generate_unique_name(path: &str) -> String {

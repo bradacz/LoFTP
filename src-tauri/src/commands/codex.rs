@@ -3,6 +3,7 @@ use crate::commands::ftp::FtpState;
 use crate::commands::sftp::SftpState;
 use crate::models::file_item::FileItem;
 use crate::models::hosting::Protocol;
+use crate::models::transfer::{CancellationState, TransferRegistry, TransferStatus};
 use crate::services::config_store;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -78,6 +79,16 @@ struct CodexPlanAction {
     remote_path: Option<String>,
     size: Option<u64>,
     destructive: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct SyncEntry {
+    rel_path: String,
+    full_path: Option<String>,
+    size: u64,
+    is_directory: bool,
 }
 
 impl CodexBridgeState {
@@ -238,7 +249,11 @@ pub fn codex_start_bridge_from_saved_settings(app: AppHandle) {
 
     if settings.enabled {
         let state = app.state::<CodexBridgeState>();
-        let port = if settings.port == 0 { 17642 } else { settings.port };
+        let port = if settings.port == 0 {
+            17642
+        } else {
+            settings.port
+        };
         let _ = state.start(app.clone(), port);
     }
 }
@@ -354,11 +369,24 @@ async fn handle_bridge_tool(app: AppHandle, tool: &str, body: Value) -> Result<V
             let remote = list_remote_metadata(&app, &hosting_id, &remote_path).await?;
             Ok(compare_metadata(local, remote))
         }
-        "loftp_create_upload_plan" | "loftp_create_sync_plan" => {
+        "loftp_create_upload_plan" => {
             let local_path = string_arg(&body, "localPath")?;
             let remote_path = string_arg(&body, "remotePath")?;
             let hosting_id = body.get("hostingId").and_then(Value::as_str).map(|s| s.to_string());
             let plan = create_upload_plan(&local_path, &remote_path, hosting_id)?;
+            serde_json::to_value(plan).map_err(|e| e.to_string())
+        }
+        "loftp_create_sync_plan" => {
+            let local_path = string_arg(&body, "localPath")?;
+            let remote_path = string_arg(&body, "remotePath")?;
+            let hosting_id = string_arg(&body, "hostingId")?;
+            let include_deletes = body
+                .get("includeDeletes")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let plan =
+                create_sync_plan(&app, &local_path, &remote_path, &hosting_id, include_deletes)
+                    .await?;
             serde_json::to_value(plan).map_err(|e| e.to_string())
         }
         "loftp_execute_plan" => {
@@ -372,7 +400,8 @@ async fn handle_bridge_tool(app: AppHandle, tool: &str, body: Value) -> Result<V
                 "planId": plan.id,
                 "status": "accepted",
                 "executed": false,
-                "note": "Execution handoff is intentionally gated for LoFTP UI confirmation."
+                "note": "Execution handoff is intentionally gated for LoFTP UI confirmation.",
+                "changeReport": change_report_from_plan(&plan, false)
             }))
         }
         "loftp_run_build_command" => {
@@ -385,11 +414,37 @@ async fn handle_bridge_tool(app: AppHandle, tool: &str, body: Value) -> Result<V
             "explanation": "Provide the build log in the request body under `log`; LoFTP will return a masked summary.",
             "maskedLog": body.get("log").and_then(Value::as_str).map(redact_text)
         })),
-        "loftp_get_transfer_status" => Ok(json!({
-            "transfers": [],
-            "note": "Live transfer state is emitted in the LoFTP UI; bridge transfer polling will be wired to the audit trail next."
-        })),
-        "loftp_cancel_transfer" => Err("Transfer cancellation is available through LoFTP UI and Tauri command state.".to_string()),
+        "loftp_get_transfer_status" => {
+            let registry = app.state::<TransferRegistry>();
+            if let Some(transfer_id) = body.get("transferId").and_then(Value::as_str) {
+                Ok(json!({ "transfer": registry.get(transfer_id) }))
+            } else {
+                Ok(json!({ "transfers": registry.list() }))
+            }
+        }
+        "loftp_cancel_transfer" => {
+            let transfer_id = string_arg(&body, "transferId")?;
+            let cancelled = app.state::<CancellationState>().cancel(&transfer_id);
+            let registry = app.state::<TransferRegistry>();
+            let transfer = registry.get(&transfer_id).map(|mut progress| {
+                if cancelled {
+                    progress.status = TransferStatus::Cancelled;
+                    registry.record(progress.clone());
+                }
+                progress
+            });
+            Ok(json!({ "transferId": transfer_id, "cancelled": cancelled, "transfer": transfer }))
+        }
+        "loftp_get_change_report" => {
+            if let Some(plan_value) = body.get("plan").cloned() {
+                let plan: CodexPlan = serde_json::from_value(plan_value).map_err(|e| e.to_string())?;
+                Ok(change_report_from_plan(&plan, false))
+            } else if let Some(transfer_id) = body.get("transferId").and_then(Value::as_str) {
+                Ok(change_report_from_transfer(app.state::<TransferRegistry>().get(transfer_id)))
+            } else {
+                Err("Provide `plan` or `transferId` for change report.".to_string())
+            }
+        }
         "loftp_upload_file" | "loftp_upload_dir" | "loftp_download_file" | "loftp_download_dir" | "loftp_mkdir" | "loftp_rename" | "loftp_delete" => {
             Err("Direct mutation endpoints require a confirmed plan. Use create_*_plan then execute_plan.".to_string())
         }
@@ -718,6 +773,7 @@ fn create_upload_plan(
             remote_path: Some(remote_path.to_string()),
             size: Some(size),
             destructive: true,
+            reason: Some("Single file upload may overwrite a remote file.".to_string()),
         });
     } else {
         for entry in walkdir::WalkDir::new(root)
@@ -749,6 +805,7 @@ fn create_upload_plan(
                 remote_path: Some(remote),
                 size: fs::metadata(entry.path()).ok().map(|m| m.len()),
                 destructive: true,
+                reason: Some("Upload plan action.".to_string()),
             });
         }
     }
@@ -763,6 +820,285 @@ fn create_upload_plan(
         risks,
         requires_confirmation: true,
     })
+}
+
+async fn create_sync_plan(
+    app: &AppHandle,
+    local_path: &str,
+    remote_path: &str,
+    hosting_id: &str,
+    include_deletes: bool,
+) -> Result<CodexPlan, String> {
+    let local_entries = collect_local_sync_entries(local_path)?;
+    let remote_entries = collect_remote_sync_entries(app, hosting_id, remote_path).await?;
+    let remote_by_rel: std::collections::HashMap<String, SyncEntry> = remote_entries
+        .into_iter()
+        .map(|entry| (entry.rel_path.clone(), entry))
+        .collect();
+    let local_by_rel: std::collections::HashMap<String, SyncEntry> = local_entries
+        .into_iter()
+        .map(|entry| (entry.rel_path.clone(), entry))
+        .collect();
+
+    let mut actions = Vec::new();
+    let mut risks = Vec::new();
+
+    for local in local_by_rel.values() {
+        if local.is_directory {
+            continue;
+        }
+        let remote = remote_by_rel.get(&local.rel_path);
+        let remote_target = join_remote_path(remote_path, &local.rel_path);
+        let action_type = match remote {
+            None => "uploadNewFile",
+            Some(remote) if remote.size != local.size => "uploadChangedFile",
+            Some(_) => "skipSameFile",
+        };
+        let destructive = matches!(action_type, "uploadChangedFile");
+        if is_risky_deploy_path(&local.rel_path) {
+            risks.push(format!(
+                "Review risky local file before sync: {}",
+                local.rel_path
+            ));
+        }
+        actions.push(CodexPlanAction {
+            action_type: action_type.to_string(),
+            local_path: local.full_path.clone(),
+            remote_path: Some(remote_target),
+            size: Some(local.size),
+            destructive,
+            reason: Some(match action_type {
+                "uploadNewFile" => "Local file does not exist remotely.".to_string(),
+                "uploadChangedFile" => "Local and remote file sizes differ.".to_string(),
+                _ => "Local and remote file sizes match.".to_string(),
+            }),
+        });
+    }
+
+    for remote in remote_by_rel.values() {
+        if remote.is_directory || local_by_rel.contains_key(&remote.rel_path) {
+            continue;
+        }
+        let action_type = if include_deletes {
+            "deleteRemoteFile"
+        } else {
+            "remoteOnlyFile"
+        };
+        if include_deletes {
+            risks.push(format!(
+                "Remote-only file will be deleted if this sync delete section is confirmed: {}",
+                remote.rel_path
+            ));
+        }
+        actions.push(CodexPlanAction {
+            action_type: action_type.to_string(),
+            local_path: None,
+            remote_path: remote.full_path.clone(),
+            size: Some(remote.size),
+            destructive: include_deletes,
+            reason: Some(if include_deletes {
+                "Remote-only file selected for delete section.".to_string()
+            } else {
+                "Remote-only file; delete section is not enabled.".to_string()
+            }),
+        });
+    }
+
+    if include_deletes {
+        risks
+            .push("Remote delete actions require a separate destructive confirmation.".to_string());
+    }
+
+    Ok(CodexPlan {
+        id: Uuid::new_v4().to_string(),
+        kind: "syncLocalToRemote".to_string(),
+        hosting_id: Some(hosting_id.to_string()),
+        local_base_path: Some(local_path.to_string()),
+        remote_base_path: Some(remote_path.to_string()),
+        actions,
+        risks,
+        requires_confirmation: true,
+    })
+}
+
+fn collect_local_sync_entries(root: &str) -> Result<Vec<SyncEntry>, String> {
+    let root_path = Path::new(root);
+    if root_path.is_file() {
+        let metadata = fs::metadata(root_path).map_err(|e| e.to_string())?;
+        return Ok(vec![SyncEntry {
+            rel_path: root_path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| "file".to_string()),
+            full_path: Some(root.to_string()),
+            size: metadata.len(),
+            is_directory: false,
+        }]);
+    }
+
+    let mut entries = Vec::new();
+    for entry in walkdir::WalkDir::new(root_path)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if entry.path() == root_path {
+            continue;
+        }
+        let rel_path = entry
+            .path()
+            .strip_prefix(root_path)
+            .map_err(|e| e.to_string())?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let metadata = entry.metadata().map_err(|e| e.to_string())?;
+        entries.push(SyncEntry {
+            rel_path,
+            full_path: Some(entry.path().to_string_lossy().to_string()),
+            size: if metadata.is_file() {
+                metadata.len()
+            } else {
+                0
+            },
+            is_directory: metadata.is_dir(),
+        });
+    }
+    Ok(entries)
+}
+
+async fn collect_remote_sync_entries(
+    app: &AppHandle,
+    hosting_id: &str,
+    remote_root: &str,
+) -> Result<Vec<SyncEntry>, String> {
+    let mut entries = Vec::new();
+    collect_remote_sync_entries_inner(app, hosting_id, remote_root, "", &mut entries).await?;
+    Ok(entries)
+}
+
+async fn collect_remote_sync_entries_inner(
+    app: &AppHandle,
+    hosting_id: &str,
+    remote_root: &str,
+    rel_prefix: &str,
+    entries: &mut Vec<SyncEntry>,
+) -> Result<(), String> {
+    let current = if rel_prefix.is_empty() {
+        remote_root.to_string()
+    } else {
+        join_remote_path(remote_root, rel_prefix)
+    };
+
+    for item in list_remote_metadata(app, hosting_id, &current).await? {
+        let rel_path = if rel_prefix.is_empty() {
+            item.name.clone()
+        } else {
+            format!("{}/{}", rel_prefix.trim_end_matches('/'), item.name)
+        };
+        let full_path = join_remote_path(remote_root, &rel_path);
+        entries.push(SyncEntry {
+            rel_path: rel_path.clone(),
+            full_path: Some(full_path),
+            size: item.size,
+            is_directory: item.is_directory,
+        });
+        if item.is_directory {
+            Box::pin(collect_remote_sync_entries_inner(
+                app,
+                hosting_id,
+                remote_root,
+                &rel_path,
+                entries,
+            ))
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+fn join_remote_path(base: &str, rel_path: &str) -> String {
+    format!(
+        "{}/{}",
+        base.trim_end_matches('/'),
+        rel_path.trim_start_matches('/')
+    )
+}
+
+fn is_risky_deploy_path(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    lower.contains(".env")
+        || lower.contains("node_modules")
+        || lower.ends_with(".map")
+        || lower.contains("/.git/")
+        || lower.ends_with(".log")
+}
+
+fn change_report_from_plan(plan: &CodexPlan, executed: bool) -> Value {
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut total_bytes = 0u64;
+    let mut destructive_actions = 0usize;
+
+    for action in &plan.actions {
+        *counts.entry(action.action_type.clone()).or_default() += 1;
+        total_bytes += action.size.unwrap_or(0);
+        if action.destructive {
+            destructive_actions += 1;
+        }
+    }
+
+    json!({
+        "planId": plan.id,
+        "kind": plan.kind,
+        "executed": executed,
+        "actionCounts": counts,
+        "totalActions": plan.actions.len(),
+        "totalBytes": total_bytes,
+        "destructiveActions": destructive_actions,
+        "risks": plan.risks.clone(),
+        "rollbackRecommendation": rollback_recommendation(plan),
+    })
+}
+
+fn change_report_from_transfer(
+    transfer: Option<crate::models::transfer::TransferProgress>,
+) -> Value {
+    match transfer {
+        Some(transfer) => {
+            let rollback = match &transfer.status {
+                TransferStatus::Done => {
+                    "Review uploaded paths and keep a backup before deleting remote files."
+                }
+                TransferStatus::Error | TransferStatus::Cancelled => {
+                    "Retry only failed or incomplete files after refreshing both panels."
+                }
+                _ => "Wait for transfer completion before preparing rollback steps.",
+            };
+            json!({
+                "transferId": transfer.transfer_id,
+                "fileName": transfer.file_name,
+                "status": transfer.status,
+                "bytesTransferred": transfer.bytes_transferred,
+                "totalBytes": transfer.total_bytes,
+                "completedFiles": transfer.completed_files,
+                "totalFiles": transfer.total_files,
+                "rollbackRecommendation": rollback
+            })
+        }
+        None => json!({ "error": "Transfer not found" }),
+    }
+}
+
+fn rollback_recommendation(plan: &CodexPlan) -> String {
+    if plan
+        .actions
+        .iter()
+        .any(|action| action.action_type == "deleteRemoteFile")
+    {
+        "Download or snapshot remote-only files before executing the delete section.".to_string()
+    } else if plan.actions.iter().any(|action| action.destructive) {
+        "Keep a remote backup before overwriting changed files.".to_string()
+    } else {
+        "No destructive changes are planned; rollback is likely limited to removing newly uploaded files.".to_string()
+    }
 }
 
 fn compare_metadata(local: Vec<FileItem>, remote: Vec<FileItem>) -> Value {

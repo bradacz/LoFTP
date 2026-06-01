@@ -1,11 +1,12 @@
 use crate::models::file_item::FileItem;
 use crate::models::transfer::{
-    is_cancelled, CancellationState, TransferOptions, TransferProgress, TransferStatus,
+    is_cancelled, CancellationState, TransferOptions, TransferProgress, TransferRegistry,
+    TransferStatus,
 };
 use crate::services::bunny_storage_client::BunnyStorageSession;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 pub struct BunnyStorageState {
     pub sessions: Mutex<HashMap<String, BunnyStorageSession>>,
@@ -556,22 +557,21 @@ fn emit_progress(
     status: TransferStatus,
     snapshot: ProgressSnapshot,
 ) {
-    let _ = app.emit(
-        "transfer-progress",
-        TransferProgress {
-            transfer_id: transfer_id.to_string(),
-            file_name: snapshot.file_name,
-            progress,
-            status,
-            bytes_transferred: snapshot.bytes_transferred,
-            total_bytes: snapshot.total_bytes,
-            current_file_name: snapshot.current_file_name,
-            current_file_bytes_transferred: snapshot.current_file_bytes_transferred,
-            current_file_total_bytes: snapshot.current_file_total_bytes,
-            completed_files: snapshot.completed_files,
-            total_files: snapshot.total_files,
-        },
-    );
+    let payload = TransferProgress {
+        transfer_id: transfer_id.to_string(),
+        file_name: snapshot.file_name,
+        progress,
+        status,
+        bytes_transferred: snapshot.bytes_transferred,
+        total_bytes: snapshot.total_bytes,
+        current_file_name: snapshot.current_file_name,
+        current_file_bytes_transferred: snapshot.current_file_bytes_transferred,
+        current_file_total_bytes: snapshot.current_file_total_bytes,
+        completed_files: snapshot.completed_files,
+        total_files: snapshot.total_files,
+    };
+    app.state::<TransferRegistry>().record(payload.clone());
+    let _ = app.emit("transfer-progress", payload);
 }
 
 impl ProgressSnapshot {

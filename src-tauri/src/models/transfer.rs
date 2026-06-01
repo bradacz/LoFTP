@@ -19,6 +19,38 @@ pub struct TransferProgress {
     pub total_files: Option<u64>,
 }
 
+pub struct TransferRegistry {
+    transfers: Mutex<HashMap<String, TransferProgress>>,
+}
+
+impl TransferRegistry {
+    pub fn new() -> Self {
+        Self {
+            transfers: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn record(&self, progress: TransferProgress) {
+        if let Ok(mut transfers) = self.transfers.lock() {
+            transfers.insert(progress.transfer_id.clone(), progress);
+        }
+    }
+
+    pub fn list(&self) -> Vec<TransferProgress> {
+        self.transfers
+            .lock()
+            .map(|transfers| transfers.values().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    pub fn get(&self, transfer_id: &str) -> Option<TransferProgress> {
+        self.transfers
+            .lock()
+            .ok()
+            .and_then(|transfers| transfers.get(transfer_id).cloned())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TransferStatus {

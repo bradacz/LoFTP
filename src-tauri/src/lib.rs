@@ -7,7 +7,7 @@ use commands::codex::CodexBridgeState;
 use commands::ftp::FtpState;
 use commands::sftp::SftpState;
 use commands::updater::PendingUpdateState;
-use models::transfer::CancellationState;
+use models::transfer::{CancellationState, TransferRegistry};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -21,6 +21,7 @@ pub fn run() {
         .manage(SftpState::new())
         .manage(PendingUpdateState::new())
         .manage(CancellationState::new())
+        .manage(TransferRegistry::new())
         .setup(|app| {
             commands::codex::codex_start_bridge_from_saved_settings(app.handle().clone());
             Ok(())
