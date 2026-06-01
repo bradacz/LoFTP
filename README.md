@@ -6,10 +6,13 @@ LoFTP is licensed under the [MIT License](LICENSE). Source code is public, and p
 
 LoFTP started from a simple need: on macOS, I was missing the speed and workflow of Total Commander, and none of the available alternatives felt right for the way I work. So I started building my own file manager, focused on practical day-to-day use instead of feature lists for their own sake.
 
-![LoFTP Screenshot](docs/loftp-main-window.png)
-![LoFTP Screenshot 2](docs/loftp-secondary-window.png)
-
 LoFTP brings a fast dual-pane workflow to macOS and combines local file management with direct access to remote servers in a way that stays efficient, familiar, and immediate.
+
+![LoFTP dual-pane file manager in light mode](docs/loftp-main-window.png)
+
+The same workflow is available in a focused dark theme for longer sessions and low-light environments.
+
+![LoFTP dual-pane file manager in dark mode](docs/loftp-dark-mode.png)
 
 ## Current Implemented Scope
 
@@ -34,6 +37,10 @@ LoFTP is a dual-pane file manager for macOS built for working with both local an
 - Interface localization in English, Czech, German, Slovak, Polish, and Spanish
 - In-app update checks and installation flow through Tauri updater
 
+Connection profiles are created directly in the app and support FTP, FTPS, SFTP, and Bunny Storage.
+
+![LoFTP new hosting dialog with FTP, FTPS, SFTP, and Bunny Storage options](docs/loftp-new-hosting.png)
+
 ## AI, Codex, And VS Code Integration
 
 LoFTP already includes practical integrations for development-oriented workflows:
@@ -44,6 +51,8 @@ LoFTP already includes practical integrations for development-oriented workflows
 - A bundled LoFTP Codex Connector installed from Settings -> Codex, so Codex can use saved FTP, SFTP, FTPS, and Bunny Storage profiles without receiving credentials
 
 Codex write actions are routed through LoFTP plans and require confirmation in the LoFTP UI before uploads, downloads, deletes, syncs, or approved build commands run. The connector status and test action are available in Settings -> Codex.
+
+![LoFTP Codex connector settings showing a ready local bridge and bundled connector](docs/loftp-codex-settings.png)
 
 Full connector setup and troubleshooting notes are documented in [docs/codex-connector.md](docs/codex-connector.md).
 
