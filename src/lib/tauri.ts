@@ -423,10 +423,21 @@ export interface CodexConnectorStatus {
   installed: boolean;
   configured: boolean;
   bridgeRunning: boolean;
+  bridgeReachable: boolean;
   bridgeUrl: string;
   pluginPath: string;
   marketplacePath: string;
   configPath: string;
+  status: "ready" | "needsRepair" | "needsConfig" | "needsBridge" | "missingNode" | string;
+  message: string;
+  pluginManifestExists: boolean;
+  mcpConfigExists: boolean;
+  mcpServerExists: boolean;
+  marketplaceValid: boolean;
+  marketplaceEntryExists: boolean;
+  connectorConfigValid: boolean;
+  nodeAvailable: boolean;
+  nodeCommand?: string | null;
 }
 
 export interface CodexHostingSummary {
@@ -457,6 +468,10 @@ export async function codexGetConnectorStatus(): Promise<CodexConnectorStatus> {
 
 export async function codexInstallConnector(): Promise<CodexConnectorStatus> {
   return invoke("codex_install_connector");
+}
+
+export async function codexTestConnector(): Promise<CodexConnectorStatus> {
+  return invoke("codex_test_connector");
 }
 
 export async function codexSaveBridgeSettings(settings: CodexBridgeSettings): Promise<CodexBridgeSettings> {

@@ -1,6 +1,6 @@
 # LoFTP Codex Connector
 
-The LoFTP Codex Connector is bundled with the LoFTP application. Users do not need to download a separate add-on.
+The LoFTP Codex Connector is bundled with the LoFTP application. Users do not need to download a separate add-on or paste FTP, SFTP, Bunny.net, SSH, or AI credentials into Codex.
 
 ## User Setup
 
@@ -9,8 +9,47 @@ The LoFTP Codex Connector is bundled with the LoFTP application. Users do not ne
 3. Open `Settings -> Codex`.
 4. Enable the local Codex bridge.
 5. Click `Install / repair connector`.
+6. Click `Test connector`.
 
-LoFTP installs the connector into the user's local Codex plugin area and writes a local connector config containing the bridge URL and session token.
+LoFTP installs the connector into the user's local Codex plugin area, writes a local connector config containing the bridge URL and session token, and registers the plugin in the personal Codex marketplace. The installed `.mcp.json` uses the detected Node.js runtime path so Codex does not depend on a fragile shell `PATH` lookup.
+
+## What Another User Needs
+
+Another user only needs:
+
+- LoFTP installed
+- Codex installed
+- Node.js available on the computer
+- their own saved LoFTP profiles
+
+They do not need your Codex session, tokens, activation, or server credentials. Each LoFTP installation generates its own local bridge token and writes its own connector config.
+
+## Bunny.net Setup
+
+Bunny.net support is configured as a saved hosting profile in LoFTP:
+
+1. Open the connection dialog.
+2. Choose `Bunny Storage`.
+3. Enter the storage zone name.
+4. Enter the Bunny Storage access key.
+5. Optionally enter the pull zone URL.
+6. Save and test the profile.
+
+Codex sees only safe hosting metadata and file listings through the connector. Bunny access keys remain stored in LoFTP.
+
+## Connector Status Checks
+
+`Settings -> Codex` reports the connector state across these checks:
+
+- plugin manifest exists
+- MCP config exists
+- MCP server script exists
+- personal Codex marketplace entry exists
+- LoFTP connector config is valid
+- Node.js runtime is available
+- LoFTP bridge is running and reachable on `127.0.0.1`
+
+If an installed connector is incomplete, use `Install / repair connector`. If the personal Codex marketplace file is invalid JSON, LoFTP leaves it unchanged and creates a timestamped backup instead of overwriting it.
 
 ## Security Model
 
@@ -22,6 +61,37 @@ LoFTP installs the connector into the user's local Codex plugin area and writes 
 
 ## Connector Tools
 
-The connector exposes safe LoFTP bridge tools for status, profiles, local and remote listings, text previews, project analysis, sync plan creation, plan confirmation, allowlisted build requests, and transfer status.
+The connector exposes safe LoFTP bridge tools for:
+
+- bridge status
+- saved hosting metadata
+- active LoFTP context
+- local and remote listings
+- bounded text previews
+- local secret scanning
+- project analysis
+- build output detection
+- local/remote metadata comparison
+- upload plan creation
+- sync plan creation
+- plan execution handoff to LoFTP confirmation
+- allowlisted build requests
+- masked build-error summaries
+- change reports
+- transfer status
+- transfer cancellation
 
 Direct mutation endpoints are intentionally blocked by the bridge. Codex must create a plan first and LoFTP must confirm it in the application UI.
+
+## Troubleshooting
+
+If Codex cannot see LoFTP:
+
+1. Open LoFTP and keep it running.
+2. Open `Settings -> Codex`.
+3. Enable the local bridge.
+4. Click `Install / repair connector`.
+5. Click `Test connector`.
+6. Restart Codex if it had already loaded plugins before installation.
+
+If the status says `Node missing`, install Node.js or make it available in the system path, then run `Install / repair connector` again.

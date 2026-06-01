@@ -31,7 +31,7 @@ These workflows are intended to help with:
 
 LoFTP includes a bundled Codex Connector that can be installed from `Settings -> Codex`.
 
-The connector lets Codex work with saved LoFTP hostings without exposing credentials in chat.
+The connector lets Codex work with saved LoFTP hostings without exposing credentials in chat. It is part of the LoFTP installation and is copied into the local Codex plugin area by LoFTP.
 
 Design:
 
@@ -39,6 +39,17 @@ Design:
 - Codex works through safe local tools
 - secrets do not need to be pasted into conversations
 - write actions require confirmation in the LoFTP UI
+
+Setup summary:
+
+1. open `Settings -> Codex`
+2. enable the local bridge
+3. click `Install / repair connector`
+4. click `Test connector`
+
+The connector supports FTP, FTPS, SFTP, and Bunny Storage profiles saved in LoFTP. Bunny.net is configured in the LoFTP connection dialog by choosing `Bunny Storage`, entering the storage zone name, access key, and optional pull zone URL.
+
+See [Codex Connector](Codex-Connector) for the full setup and troubleshooting page.
 
 ## VS Code Integration
 

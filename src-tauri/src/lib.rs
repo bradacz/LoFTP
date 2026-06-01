@@ -120,6 +120,7 @@ pub fn run() {
             commands::codex::codex_get_bridge_settings,
             commands::codex::codex_get_connector_status,
             commands::codex::codex_install_connector,
+            commands::codex::codex_test_connector,
             commands::codex::codex_save_bridge_settings,
             commands::codex::codex_list_hostings,
             commands::codex::codex_update_active_context,

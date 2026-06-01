@@ -15,6 +15,7 @@ This wiki is the quick reference for:
 - [Features Overview](Features-Overview)
 - [Licensing and Project Support](Licensing-and-Project-Support)
 - [AI, Codex, and VS Code](AI-Codex-and-VS-Code)
+- [Codex Connector](Codex-Connector)
 - [FAQ](FAQ)
 
 ## Project Links

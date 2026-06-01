@@ -28,6 +28,7 @@ import {
   codexInstallConnector,
   codexListHostings,
   codexSaveBridgeSettings,
+  codexTestConnector,
 } from "@/lib/tauri";
 import type { CodexConnectorStatus, CodexHostingSummary } from "@/lib/tauri";
 import { toast } from "@/components/ui/sonner";
@@ -85,6 +86,7 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
   const [testingAi, setTestingAi] = useState(false);
   const [savingCodex, setSavingCodex] = useState(false);
   const [installingCodexConnector, setInstallingCodexConnector] = useState(false);
+  const [testingCodexConnector, setTestingCodexConnector] = useState(false);
   const { isActivated, licenseKey, activate } = useLicense();
   const { locale, setLocale, languages, t } = useI18n();
 
@@ -179,6 +181,9 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
       setCodexPort(String(settings.port));
       setCodexBridgeRunning(Boolean(settings.running));
       setCodexSessionToken(settings.sessionToken ?? null);
+      codexGetConnectorStatus()
+        .then(setCodexConnectorStatus)
+        .catch(() => {});
       toast.success(t("common.saveChanges"));
     } catch (error) {
       toast.error(String(error));
@@ -202,6 +207,40 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
       toast.error(String(error));
     } finally {
       setInstallingCodexConnector(false);
+    }
+  };
+
+  const testCodexConnector = async () => {
+    setTestingCodexConnector(true);
+    try {
+      const status = await codexTestConnector();
+      setCodexConnectorStatus(status);
+      if (status.status === "ready") {
+        toast.success(t("settings.codexConnectorTestOk"));
+      } else {
+        toast.error(t("settings.codexConnectorTestFailed"), { description: status.message });
+      }
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setTestingCodexConnector(false);
+    }
+  };
+
+  const codexConnectorStatusLabel = (status?: CodexConnectorStatus | null) => {
+    switch (status?.status) {
+      case "ready":
+        return t("settings.codexConnectorStatusReady");
+      case "needsConfig":
+        return t("settings.codexConnectorStatusNeedsConfig");
+      case "needsBridge":
+        return t("settings.codexConnectorStatusNeedsBridge");
+      case "missingNode":
+        return t("settings.codexConnectorStatusMissingNode");
+      case "needsRepair":
+        return t("settings.codexConnectorStatusNeedsRepair");
+      default:
+        return t("settings.codexConnectorMissing");
     }
   };
 
@@ -415,15 +454,15 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                     </div>
                     <div className="grid gap-2 rounded-lg border border-border bg-background px-3 py-3 text-xs">
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Status</span>
+                        <span className="text-muted-foreground">{t("settings.codexBridgeStatus")}</span>
                         <span className={codexBridgeRunning ? "font-semibold text-green-600 dark:text-green-400" : "font-semibold text-muted-foreground"}>
-                          {codexBridgeRunning ? "Running on 127.0.0.1" : "Stopped"}
+                          {codexBridgeRunning ? t("settings.codexBridgeRunning") : t("settings.codexBridgeStopped")}
                         </span>
                       </div>
                       {codexSessionToken && (
                         <div className="grid gap-1">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-muted-foreground">Session token</span>
+                            <span className="text-muted-foreground">{t("settings.codexSessionToken")}</span>
                             <div className="flex items-center gap-1">
                               <button
                                 type="button"
@@ -437,7 +476,7 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                                 onClick={() => setShowCodexSessionToken((value) => !value)}
                                 className="rounded border border-border px-2 py-1 text-[11px] font-semibold hover:bg-file-hover"
                               >
-                                {showCodexSessionToken ? "Hide" : "Reveal"}
+                                {showCodexSessionToken ? t("settings.codexSessionTokenHide") : t("settings.codexSessionTokenReveal")}
                               </button>
                             </div>
                           </div>
@@ -447,7 +486,7 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                         </div>
                       )}
                       <p className="text-muted-foreground">
-                        Codex receives profile metadata and file listings only. Passwords, API keys and SSH material stay in LoFTP.
+                        {t("settings.codexConnectorSecurityNote")}
                       </p>
                     </div>
                     <div className="grid gap-3 rounded-lg border border-border bg-background px-3 py-3 text-xs">
@@ -456,15 +495,33 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                           <div className="font-semibold text-foreground">{t("settings.codexConnector")}</div>
                           <p className="mt-1 text-muted-foreground">{t("settings.codexConnectorDesc")}</p>
                         </div>
-                        <span className={codexConnectorStatus?.installed ? "shrink-0 font-semibold text-green-600 dark:text-green-400" : "shrink-0 font-semibold text-muted-foreground"}>
-                          {codexConnectorStatus?.installed ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}
+                        <span className={codexConnectorStatus?.status === "ready" ? "shrink-0 font-semibold text-green-600 dark:text-green-400" : "shrink-0 font-semibold text-muted-foreground"}>
+                          {codexConnectorStatusLabel(codexConnectorStatus)}
                         </span>
                       </div>
                       <div className="grid gap-1 text-[11px] text-muted-foreground">
                         <div>{t("settings.codexConnectorBridge")}: {codexConnectorStatus?.bridgeUrl ?? `http://127.0.0.1:${codexPort || "17642"}`}</div>
+                        {codexConnectorStatus?.message && <div>{codexConnectorStatus.message}</div>}
                         {codexConnectorStatus?.pluginPath && <div className="truncate">{t("settings.codexConnectorPath")}: {codexConnectorStatus.pluginPath}</div>}
+                        {codexConnectorStatus?.nodeCommand && <div className="truncate">{t("settings.codexConnectorNode")}: {codexConnectorStatus.nodeCommand}</div>}
+                        {codexConnectorStatus && (
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-1 pt-1">
+                            <span>{t("settings.codexConnectorServer")}: {codexConnectorStatus.mcpServerExists ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}</span>
+                            <span>{t("settings.codexConnectorConfig")}: {codexConnectorStatus.connectorConfigValid ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}</span>
+                            <span>{t("settings.codexConnectorMarketplace")}: {codexConnectorStatus.marketplaceEntryExists ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}</span>
+                            <span>{t("settings.codexConnectorNode")}: {codexConnectorStatus.nodeAvailable ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}</span>
+                          </div>
+                        )}
                       </div>
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={testCodexConnector}
+                          disabled={testingCodexConnector}
+                          className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-file-hover disabled:opacity-40"
+                        >
+                          {testingCodexConnector ? "..." : t("settings.codexConnectorTest")}
+                        </button>
                         <button
                           type="button"
                           onClick={installCodexConnector}
@@ -476,9 +533,9 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                       </div>
                     </div>
                     <div className="rounded-lg border border-border bg-background px-3 py-3 text-xs">
-                      <div className="mb-2 font-semibold text-foreground">Available profiles</div>
+                      <div className="mb-2 font-semibold text-foreground">{t("settings.codexAvailableProfiles")}</div>
                       <div className="space-y-1 text-muted-foreground">
-                        {codexHostings.length === 0 && <div>No profiles saved.</div>}
+                        {codexHostings.length === 0 && <div>{t("settings.codexNoProfiles")}</div>}
                         {codexHostings.map((hosting) => (
                           <div key={hosting.id} className="flex items-center justify-between gap-3">
                             <span className="truncate">{hosting.name || hosting.host}</span>

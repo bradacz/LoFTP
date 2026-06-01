@@ -33,6 +33,11 @@ const TOOL_DEFINITIONS = [
     remotePath: stringSchema("Remote base path."),
     hostingId: stringSchema("Saved LoFTP hosting id.")
   }, ["localPath", "remotePath", "hostingId"]),
+  tool("loftp_create_upload_plan", "Create a LoFTP upload plan. The plan still requires confirmation in LoFTP.", {
+    localPath: stringSchema("Allowed local file or directory path."),
+    remotePath: stringSchema("Remote destination path."),
+    hostingId: stringSchema("Optional saved LoFTP hosting id. Omit to use the active context when available.")
+  }, ["localPath", "remotePath"]),
   tool("loftp_create_sync_plan", "Create a LoFTP sync plan. The plan still requires confirmation in LoFTP.", {
     localPath: stringSchema("Allowed local base path."),
     remotePath: stringSchema("Remote base path."),
@@ -54,6 +59,13 @@ const TOOL_DEFINITIONS = [
     workingDir: stringSchema("Allowed local working directory."),
     command: stringSchema("Allowlisted build command.")
   }, ["workingDir", "command"]),
+  tool("loftp_explain_build_error", "Return a masked build-log summary for Codex review.", {
+    log: stringSchema("Build log or error text to mask and summarize.")
+  }, ["log"]),
+  tool("loftp_get_change_report", "Create a readable change report from a pending plan or transfer id.", {
+    plan: { type: "object", description: "LoFTP plan object returned by a create_*_plan tool." },
+    transferId: stringSchema("LoFTP transfer id.")
+  }),
   tool("loftp_get_transfer_status", "Read LoFTP transfer status.", {
     transferId: stringSchema("Optional transfer id.")
   }),
@@ -144,7 +156,7 @@ async function handle(message) {
       result(id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "loftp-codex-connector", version: "0.1.0" }
+        serverInfo: { name: "loftp-codex-connector", version: "0.1.1" }
       });
       return;
     }

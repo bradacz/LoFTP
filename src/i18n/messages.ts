@@ -94,6 +94,12 @@ export interface Messages {
     codexBridgeEnable: string;
     codexBridgePort: string;
     codexBridgeHint: string;
+    codexBridgeStatus: string;
+    codexBridgeRunning: string;
+    codexBridgeStopped: string;
+    codexSessionToken: string;
+    codexSessionTokenReveal: string;
+    codexSessionTokenHide: string;
     codexConnector: string;
     codexConnectorDesc: string;
     codexConnectorInstall: string;
@@ -102,6 +108,21 @@ export interface Messages {
     codexConnectorMissing: string;
     codexConnectorBridge: string;
     codexConnectorPath: string;
+    codexConnectorNode: string;
+    codexConnectorServer: string;
+    codexConnectorConfig: string;
+    codexConnectorMarketplace: string;
+    codexConnectorSecurityNote: string;
+    codexConnectorTest: string;
+    codexConnectorTestOk: string;
+    codexConnectorTestFailed: string;
+    codexConnectorStatusReady: string;
+    codexConnectorStatusNeedsRepair: string;
+    codexConnectorStatusNeedsConfig: string;
+    codexConnectorStatusNeedsBridge: string;
+    codexConnectorStatusMissingNode: string;
+    codexAvailableProfiles: string;
+    codexNoProfiles: string;
     licenseTransfer: string;
     activationFailed: string;
     integrationAiApi: string;
@@ -757,6 +778,12 @@ function createMessages(nativeName: string): Messages {
       codexBridgeEnable: "Enable local Codex bridge",
       codexBridgePort: "Localhost port",
       codexBridgeHint: "Codex uses saved FTP/SFTP profiles through LoFTP. Passwords and API keys are not returned to the conversation.",
+      codexBridgeStatus: "Status",
+      codexBridgeRunning: "Running on 127.0.0.1",
+      codexBridgeStopped: "Stopped",
+      codexSessionToken: "Session token",
+      codexSessionTokenReveal: "Reveal",
+      codexSessionTokenHide: "Hide",
       codexConnector: "Bundled Codex connector",
       codexConnectorDesc: "Install or repair the connector included with LoFTP. It configures Codex without manual token copying.",
       codexConnectorInstall: "Install / repair connector",
@@ -765,6 +792,21 @@ function createMessages(nativeName: string): Messages {
       codexConnectorMissing: "Not installed",
       codexConnectorBridge: "Bridge",
       codexConnectorPath: "Plugin path",
+      codexConnectorNode: "Node runtime",
+      codexConnectorServer: "MCP server",
+      codexConnectorConfig: "Config",
+      codexConnectorMarketplace: "Marketplace",
+      codexConnectorSecurityNote: "Codex receives profile metadata and file listings only. Passwords, API keys and SSH material stay in LoFTP.",
+      codexConnectorTest: "Test connector",
+      codexConnectorTestOk: "Codex connector is ready.",
+      codexConnectorTestFailed: "Codex connector needs attention.",
+      codexConnectorStatusReady: "Ready",
+      codexConnectorStatusNeedsRepair: "Needs repair",
+      codexConnectorStatusNeedsConfig: "Needs config",
+      codexConnectorStatusNeedsBridge: "Bridge stopped",
+      codexConnectorStatusMissingNode: "Node missing",
+      codexAvailableProfiles: "Available profiles",
+      codexNoProfiles: "No profiles saved.",
       licenseTransfer: "Transfer license to this computer",
       activationFailed: "Activation failed.",
       integrationAiApi: "AI through user API",
@@ -1231,6 +1273,12 @@ export const messages: Record<Locale, Messages> = {
       codexBridgeEnable: "Zapnout lokální Codex bridge",
       codexBridgePort: "Localhost port",
       codexBridgeHint: "Codex používá uložené FTP/SFTP profily přes LoFTP. Hesla a API klíče se nevrací do konverzace.",
+      codexBridgeStatus: "Stav",
+      codexBridgeRunning: "Běží na 127.0.0.1",
+      codexBridgeStopped: "Zastaveno",
+      codexSessionToken: "Session token",
+      codexSessionTokenReveal: "Zobrazit",
+      codexSessionTokenHide: "Skrýt",
       codexConnector: "Přibalený Codex connector",
       codexConnectorDesc: "Nainstaluje nebo opraví connector dodaný s LoFTP. Codex se nastaví bez ručního kopírování tokenu.",
       codexConnectorInstall: "Nainstalovat / opravit connector",
@@ -1239,6 +1287,21 @@ export const messages: Record<Locale, Messages> = {
       codexConnectorMissing: "Nenainstalováno",
       codexConnectorBridge: "Bridge",
       codexConnectorPath: "Cesta pluginu",
+      codexConnectorNode: "Node runtime",
+      codexConnectorServer: "MCP server",
+      codexConnectorConfig: "Konfigurace",
+      codexConnectorMarketplace: "Marketplace",
+      codexConnectorSecurityNote: "Codex dostává jen metadata profilů a výpisy souborů. Hesla, API klíče a SSH materiál zůstávají v LoFTP.",
+      codexConnectorTest: "Otestovat connector",
+      codexConnectorTestOk: "Codex connector je připravený.",
+      codexConnectorTestFailed: "Codex connector vyžaduje pozornost.",
+      codexConnectorStatusReady: "Připraveno",
+      codexConnectorStatusNeedsRepair: "Vyžaduje opravu",
+      codexConnectorStatusNeedsConfig: "Chybí konfigurace",
+      codexConnectorStatusNeedsBridge: "Bridge neběží",
+      codexConnectorStatusMissingNode: "Chybí Node",
+      codexAvailableProfiles: "Dostupné profily",
+      codexNoProfiles: "Nejsou uložené žádné profily.",
       licenseTransfer: "Převést licenci na tento počítač",
       activationFailed: "Aktivace se nepodařila.",
       integrationAiApi: "AI přes uživatelské API",

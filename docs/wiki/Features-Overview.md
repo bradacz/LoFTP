@@ -12,6 +12,7 @@
 - saved FTP profiles
 - saved FTPS profiles
 - saved SFTP profiles
+- saved Bunny Storage profiles
 - one-click reuse of saved server connections
 
 ## Transfer Tools
@@ -49,3 +50,11 @@
 - light and dark themes
 - localization in multiple languages
 - in-app updater flow
+
+## AI and Codex
+
+- AI-assisted file explanation and compare review
+- bundled Codex Connector installed from Settings -> Codex
+- safe Codex bridge for saved FTP, FTPS, SFTP, and Bunny Storage profiles
+- LoFTP confirmation before Codex-triggered write actions
+- direct opening of selected local files and folders in VS Code

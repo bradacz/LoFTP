@@ -10,7 +10,9 @@ Use the LoFTP MCP tools for LoFTP work instead of asking the user for FTP, SFTP,
 Rules:
 - Treat LoFTP as the source of truth for saved profiles and credentials.
 - Use read-only tools first: status, active context, hostings, and file listings.
-- For uploads, downloads, deletes, or syncs, create a plan and ask LoFTP to confirm it in the app UI.
+- For uploads, downloads, deletes, or syncs, create an upload or sync plan and ask LoFTP to confirm it in the app UI.
+- Use change reports to summarize planned or completed transfer effects before advising the user.
+- Use the build-error helper to mask logs before explaining build failures.
 - Do not try direct mutation endpoints.
 - Do not ask the user to paste server passwords into the conversation.
 - Build commands must go through LoFTP confirmation and the bridge allowlist.
