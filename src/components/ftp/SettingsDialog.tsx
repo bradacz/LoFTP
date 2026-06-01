@@ -68,6 +68,7 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
   const [codexPort, setCodexPort] = useState("17642");
   const [codexBridgeRunning, setCodexBridgeRunning] = useState(false);
   const [codexSessionToken, setCodexSessionToken] = useState<string | null>(null);
+  const [showCodexSessionToken, setShowCodexSessionToken] = useState(false);
   const [codexHostings, setCodexHostings] = useState<CodexHostingSummary[]>([]);
   const [contextMenuSettings, setContextMenuSettings] = useState<ContextMenuSettings>(DEFAULT_CONTEXT_MENU_SETTINGS);
   const [savingAi, setSavingAi] = useState(false);
@@ -389,9 +390,27 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                       </div>
                       {codexSessionToken && (
                         <div className="grid gap-1">
-                          <span className="text-muted-foreground">Session token</span>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-muted-foreground">Session token</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => navigator.clipboard.writeText(codexSessionToken)}
+                                className="rounded border border-border px-2 py-1 text-[11px] font-semibold hover:bg-file-hover"
+                              >
+                                {t("common.copy")}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setShowCodexSessionToken((value) => !value)}
+                                className="rounded border border-border px-2 py-1 text-[11px] font-semibold hover:bg-file-hover"
+                              >
+                                {showCodexSessionToken ? "Hide" : "Reveal"}
+                              </button>
+                            </div>
+                          </div>
                           <code className="break-all rounded border border-border bg-panel-header px-2 py-1 text-[11px] text-foreground">
-                            {codexSessionToken}
+                            {showCodexSessionToken ? codexSessionToken : "********-****-****-****-************"}
                           </code>
                         </div>
                       )}

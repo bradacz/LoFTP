@@ -1,6 +1,11 @@
 use crate::models::file_item::FileItem;
+use futures_util::{future::ready, StreamExt, TryStreamExt};
 use reqwest::{Client, Url};
 use serde::Deserialize;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tokio::io::AsyncWriteExt;
+use tokio_util::io::ReaderStream;
 
 #[derive(Clone)]
 pub struct BunnyStorageSession {
@@ -74,17 +79,54 @@ impl BunnyStorageSession {
     }
 
     pub async fn upload_file(&self, local_path: &str, remote_path: &str) -> Result<u64, String> {
-        let bytes = tokio::fs::read(local_path)
+        self.upload_file_with_progress(local_path, remote_path, |_, _| {}, None)
+            .await
+    }
+
+    pub async fn upload_file_with_progress<F>(
+        &self,
+        local_path: &str,
+        remote_path: &str,
+        mut on_progress: F,
+        cancel_token: Option<Arc<AtomicBool>>,
+    ) -> Result<u64, String>
+    where
+        F: FnMut(u64, u64) + Send + 'static,
+    {
+        let file = tokio::fs::File::open(local_path)
             .await
             .map_err(|e| format!("Read local file failed: {}", e))?;
-        let total = bytes.len() as u64;
+        let total = file
+            .metadata()
+            .await
+            .map_err(|e| format!("Read local file metadata failed: {}", e))?
+            .len();
+        on_progress(0, total);
+
+        let mut sent = 0u64;
+        let stream = ReaderStream::new(file).and_then(move |chunk| {
+            if cancel_token
+                .as_ref()
+                .map(|token| token.load(Ordering::Relaxed))
+                .unwrap_or(false)
+            {
+                return ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "Transfer cancelled",
+                )));
+            }
+            sent += chunk.len() as u64;
+            on_progress(sent, total);
+            ready(Ok(chunk))
+        });
+
         let url = self.url_for(remote_path, false)?;
         let response = self
             .client
             .put(url)
             .header("AccessKey", &self.access_key)
             .header("Content-Type", "application/octet-stream")
-            .body(bytes)
+            .body(reqwest::Body::wrap_stream(stream))
             .send()
             .await
             .map_err(|e| format!("Bunny upload failed: {}", e))?;
@@ -96,7 +138,16 @@ impl BunnyStorageSession {
         Ok(total)
     }
 
-    pub async fn download_file(&self, remote_path: &str, local_path: &str) -> Result<u64, String> {
+    pub async fn download_file_with_progress<F>(
+        &self,
+        remote_path: &str,
+        local_path: &str,
+        mut on_progress: F,
+        cancel_token: Option<Arc<AtomicBool>>,
+    ) -> Result<u64, String>
+    where
+        F: FnMut(u64, u64),
+    {
         let url = self.url_for(remote_path, false)?;
         let response = self
             .client
@@ -109,6 +160,8 @@ impl BunnyStorageSession {
         if !response.status().is_success() {
             return Err(format!("Bunny download failed: HTTP {}", response.status()));
         }
+        let total = response.content_length().unwrap_or(0);
+        on_progress(0, total);
 
         if let Some(parent) = std::path::Path::new(local_path).parent() {
             tokio::fs::create_dir_all(parent)
@@ -116,15 +169,32 @@ impl BunnyStorageSession {
                 .map_err(|e| format!("Create local dir failed: {}", e))?;
         }
 
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| format!("Read Bunny download failed: {}", e))?;
-        let total = bytes.len() as u64;
-        tokio::fs::write(local_path, bytes)
+        let mut file = tokio::fs::File::create(local_path)
             .await
             .map_err(|e| format!("Write local file failed: {}", e))?;
-        Ok(total)
+        let mut stream = response.bytes_stream();
+        let mut received = 0u64;
+
+        while let Some(chunk) = stream.next().await {
+            if cancel_token
+                .as_ref()
+                .map(|token| token.load(Ordering::Relaxed))
+                .unwrap_or(false)
+            {
+                return Err("Transfer cancelled".to_string());
+            }
+            let chunk = chunk.map_err(|e| format!("Read Bunny download failed: {}", e))?;
+            file.write_all(&chunk)
+                .await
+                .map_err(|e| format!("Write local file failed: {}", e))?;
+            received += chunk.len() as u64;
+            on_progress(received, total);
+        }
+
+        file.flush()
+            .await
+            .map_err(|e| format!("Flush local file failed: {}", e))?;
+        Ok(received)
     }
 
     pub async fn mkdir(&self, path: &str) -> Result<(), String> {

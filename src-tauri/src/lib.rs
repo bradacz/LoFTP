@@ -120,6 +120,8 @@ pub fn run() {
             commands::codex::codex_get_bridge_settings,
             commands::codex::codex_save_bridge_settings,
             commands::codex::codex_list_hostings,
+            commands::codex::codex_update_active_context,
+            commands::codex::codex_execute_pending_plan,
             // UI
             commands::ui::ui_show_context_menu,
         ])

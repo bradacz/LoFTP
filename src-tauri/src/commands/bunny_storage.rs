@@ -110,9 +110,31 @@ pub async fn bunny_storage_upload(
         return Err("Transfer cancelled".to_string());
     }
 
-    let result = session.upload_file(&local_path, &final_remote_path).await;
+    let progress_app = app.clone();
+    let progress_transfer_id = transfer_id.clone();
+    let progress_file_name = file_name.clone();
+    let result = session
+        .upload_file_with_progress(
+            &local_path,
+            &final_remote_path,
+            move |sent, total| {
+                emit_progress(
+                    &progress_app,
+                    &progress_transfer_id,
+                    percentage(sent, total),
+                    TransferStatus::Transferring,
+                    ProgressSnapshot::single_file(&progress_file_name, sent, total),
+                );
+            },
+            Some(cancel_token.clone()),
+        )
+        .await;
     cancel_state.remove(&transfer_id);
-    emit_finish(&app, &transfer_id, &file_name, total_bytes, result.is_ok());
+    if is_cancelled(&cancel_token) {
+        emit_cancelled(&app, &transfer_id, &file_name, total_bytes);
+    } else {
+        emit_finish(&app, &transfer_id, &file_name, total_bytes, result.is_ok());
+    }
     result.map(|_| ())
 }
 
@@ -151,11 +173,33 @@ pub async fn bunny_storage_download(
         return Err("Transfer cancelled".to_string());
     }
 
-    let result = session.download_file(&remote_path, &final_local_path).await;
+    let progress_app = app.clone();
+    let progress_transfer_id = transfer_id.clone();
+    let progress_file_name = file_name.clone();
+    let result = session
+        .download_file_with_progress(
+            &remote_path,
+            &final_local_path,
+            move |received, total| {
+                emit_progress(
+                    &progress_app,
+                    &progress_transfer_id,
+                    percentage(received, total),
+                    TransferStatus::Transferring,
+                    ProgressSnapshot::single_file(&progress_file_name, received, total),
+                );
+            },
+            Some(cancel_token.clone()),
+        )
+        .await;
     let total_bytes = result.as_ref().copied().unwrap_or(0);
     let ok = result.is_ok();
     cancel_state.remove(&transfer_id);
-    emit_finish(&app, &transfer_id, &file_name, total_bytes, ok);
+    if is_cancelled(&cancel_token) {
+        emit_cancelled(&app, &transfer_id, &file_name, total_bytes);
+    } else {
+        emit_finish(&app, &transfer_id, &file_name, total_bytes, ok);
+    }
     result.map(|_| ())
 }
 
@@ -218,7 +262,56 @@ pub async fn bunny_storage_upload_dir(
             continue;
         }
 
-        session.upload_file(&entry.full_path, &remote_file).await?;
+        let progress_app = app.clone();
+        let progress_transfer_id = transfer_id.clone();
+        let progress_dir_name = dir_name.clone();
+        let current_file_name = entry.rel_path.clone();
+        let base_transferred = transferred_bytes;
+        let result = session
+            .upload_file_with_progress(
+                &entry.full_path,
+                &remote_file,
+                move |sent, total| {
+                    emit_progress(
+                        &progress_app,
+                        &progress_transfer_id,
+                        percentage(base_transferred + sent, total_bytes),
+                        TransferStatus::Transferring,
+                        ProgressSnapshot::directory(
+                            &progress_dir_name,
+                            base_transferred + sent,
+                            total_bytes,
+                            Some((&current_file_name, sent, total)),
+                            completed_files,
+                            total_files,
+                        ),
+                    );
+                },
+                Some(cancel_token.clone()),
+            )
+            .await;
+        if let Err(error) = result {
+            cancel_state.remove(&transfer_id);
+            if is_cancelled(&cancel_token) {
+                emit_cancelled(&app, &transfer_id, &dir_name, total_bytes);
+            } else {
+                emit_progress(
+                    &app,
+                    &transfer_id,
+                    percentage(transferred_bytes, total_bytes),
+                    TransferStatus::Error,
+                    ProgressSnapshot::directory(
+                        &dir_name,
+                        transferred_bytes,
+                        total_bytes,
+                        Some((&entry.rel_path, 0, file_total)),
+                        completed_files,
+                        total_files,
+                    ),
+                );
+            }
+            return Err(error);
+        }
         transferred_bytes += file_total;
         completed_files += 1;
     }
@@ -292,7 +385,56 @@ pub async fn bunny_storage_download_dir(
             continue;
         }
 
-        session.download_file(&remote_file, &local_file).await?;
+        let progress_app = app.clone();
+        let progress_transfer_id = transfer_id.clone();
+        let progress_dir_name = dir_name.clone();
+        let current_file_name = rel_path.clone();
+        let base_transferred = transferred_bytes;
+        let result = session
+            .download_file_with_progress(
+                &remote_file,
+                &local_file,
+                move |received, total| {
+                    emit_progress(
+                        &progress_app,
+                        &progress_transfer_id,
+                        percentage(base_transferred + received, total_bytes),
+                        TransferStatus::Transferring,
+                        ProgressSnapshot::directory(
+                            &progress_dir_name,
+                            base_transferred + received,
+                            total_bytes,
+                            Some((&current_file_name, received, total)),
+                            completed_files,
+                            total_files,
+                        ),
+                    );
+                },
+                Some(cancel_token.clone()),
+            )
+            .await;
+        if let Err(error) = result {
+            cancel_state.remove(&transfer_id);
+            if is_cancelled(&cancel_token) {
+                emit_cancelled(&app, &transfer_id, &dir_name, total_bytes);
+            } else {
+                emit_progress(
+                    &app,
+                    &transfer_id,
+                    percentage(transferred_bytes, total_bytes),
+                    TransferStatus::Error,
+                    ProgressSnapshot::directory(
+                        &dir_name,
+                        transferred_bytes,
+                        total_bytes,
+                        Some((&rel_path, 0, item.size)),
+                        completed_files,
+                        total_files,
+                    ),
+                );
+            }
+            return Err(error);
+        }
         transferred_bytes += item.size;
         completed_files += 1;
     }

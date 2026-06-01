@@ -8,10 +8,23 @@ interface AssistantResultDialogProps {
   title: string;
   body: string;
   loading?: boolean;
+  actionLabel?: string;
+  actionDisabled?: boolean;
+  onAction?: () => void;
   onClose: () => void;
 }
 
-export function AssistantResultDialog({ open, type, title, body, loading, onClose }: AssistantResultDialogProps) {
+export function AssistantResultDialog({
+  open,
+  type,
+  title,
+  body,
+  loading,
+  actionLabel,
+  actionDisabled,
+  onAction,
+  onClose,
+}: AssistantResultDialogProps) {
   const { t } = useI18n();
   const Icon = type === "ai" ? Bot : Code2;
 
@@ -36,7 +49,16 @@ export function AssistantResultDialog({ open, type, title, body, loading, onClos
           )}
         </div>
 
-        <footer className="flex justify-end border-t border-border bg-panel-header px-5 py-3">
+        <footer className="flex justify-end gap-2 border-t border-border bg-panel-header px-5 py-3">
+          {actionLabel && onAction && (
+            <button
+              onClick={onAction}
+              disabled={actionDisabled}
+              className="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-40"
+            >
+              {actionLabel}
+            </button>
+          )}
           <button onClick={onClose} className="rounded-lg border border-border bg-background px-4 py-2 text-xs font-semibold hover:bg-file-hover">
             {t("common.close")}
           </button>
@@ -45,4 +67,3 @@ export function AssistantResultDialog({ open, type, title, body, loading, onClos
     </Dialog>
   );
 }
-

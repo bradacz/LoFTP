@@ -55,9 +55,10 @@ export function useFileActions({
   // --- Rename ---
   const rename = useCallback(() => {
     if (active.selection.selected.size !== 1) return;
+    if (isRemote && activeHost?.protocol === "bunnyStorage") return;
     const oldName = Array.from(active.selection.selected)[0];
     setPendingAction({ type: "rename", oldName });
-  }, [active.selection.selected]);
+  }, [active.selection.selected, activeHost?.protocol, isRemote]);
 
   const confirmRename = useCallback(async (newName: string) => {
     if (pendingAction?.type !== "rename") return;
@@ -67,6 +68,7 @@ export function useFileActions({
 
     try {
       if (isRemote && activeHost && isConnected) {
+        if (activeHost.protocol === "bunnyStorage") return;
         await connection.renameRemote(
           activeHost.id,
           `${active.path}/${oldName}`,

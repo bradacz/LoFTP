@@ -38,7 +38,9 @@ import {
   aiRunPrompt,
   archiveCreate,
   archiveExtract,
+  codexExecutePendingPlan,
   codexListHostings,
+  codexUpdateActiveContext,
   fsChecksum,
   fsChmod,
   fsCombineFiles,
@@ -58,6 +60,22 @@ import { toast } from "@/components/ui/sonner";
 import { useI18n } from "@/i18n";
 import type { ContextMenuAction, ContextMenuActionPayload, ContextMenuPanel, NativeContextMenuItem } from "@/types/contextMenu";
 import { getContextMenuSettings } from "@/lib/contextMenuSettings";
+
+interface CodexPendingPlanPayload {
+  planId: string;
+  kind: string;
+  hostingId?: string;
+  localBasePath?: string;
+  remoteBasePath?: string;
+  report?: {
+    totalActions?: number;
+    destructiveActions?: number;
+    totalBytes?: number;
+    risks?: string[];
+    actionCounts?: Record<string, number>;
+    rollbackRecommendation?: string;
+  };
+}
 
 const Index = () => {
   const { t } = useI18n();
@@ -109,6 +127,8 @@ const Index = () => {
     body: string;
     loading: boolean;
   } | null>(null);
+  const [pendingCodexPlanId, setPendingCodexPlanId] = useState<string | null>(null);
+  const [codexPlanApproving, setCodexPlanApproving] = useState(false);
 
   const leftSelection = useFileSelection();
   const rightSelection = useFileSelection();
@@ -356,6 +376,30 @@ const Index = () => {
     }
   };
 
+  const approvePendingCodexPlan = async () => {
+    if (!pendingCodexPlanId) return;
+    setCodexPlanApproving(true);
+    try {
+      const result = await codexExecutePendingPlan(pendingCodexPlanId);
+      setPendingCodexPlanId(null);
+      setAssistantResult({
+        type: "codex",
+        title: "Codex plan executed",
+        body: JSON.stringify(result, null, 2),
+        loading: false,
+      });
+    } catch (error) {
+      setAssistantResult({
+        type: "codex",
+        title: "Codex plan failed",
+        body: String(error),
+        loading: false,
+      });
+    } finally {
+      setCodexPlanApproving(false);
+    }
+  };
+
   const selectContextFile = (panel: ContextMenuPanel, file: FileItem) => {
     setActivePanel(panel);
     if (file.name === "..") return;
@@ -436,6 +480,7 @@ const Index = () => {
     if (!newName || newName === oldName) return;
     if (pd.mode === "remote") {
       if (!activeHost || connection.getStatus(activeHost.id) !== "connected") throw new Error(t("dialogs.remoteNotConnected"));
+      if (activeHost.protocol === "bunnyStorage") throw new Error("Bunny Storage does not support atomic rename.");
       await connection.renameRemote(activeHost.id, `${pd.path}/${oldName}`, `${pd.path}/${newName}`, activeHost.protocol);
     } else {
       await fsRename(`${pd.path}/${oldName}`, `${pd.path}/${newName}`);
@@ -743,20 +788,85 @@ const Index = () => {
   };
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlistenContextMenu: (() => void) | undefined;
+    let unlistenCodexPlan: (() => void) | undefined;
 
     listen<ContextMenuActionPayload>("loftp-context-menu-action", (event) => {
       contextActionHandlerRef.current(event.payload);
     })
       .then((nextUnlisten) => {
-        unlisten = nextUnlisten;
+        unlistenContextMenu = nextUnlisten;
+      })
+      .catch(() => {});
+
+    listen<CodexPendingPlanPayload>("loftp-codex-plan-pending", (event) => {
+      const report = event.payload.report ?? {};
+      setPendingCodexPlanId(event.payload.planId);
+      setAssistantResult({
+        type: "codex",
+        title: "Codex plan requires confirmation",
+        body: [
+          `Plan: ${event.payload.kind}`,
+          `Plan ID: ${event.payload.planId}`,
+          event.payload.hostingId ? `Hosting ID: ${event.payload.hostingId}` : "",
+          event.payload.localBasePath ? `Local: ${event.payload.localBasePath}` : "",
+          event.payload.remoteBasePath ? `Remote: ${event.payload.remoteBasePath}` : "",
+          "",
+          `Actions: ${report.totalActions ?? 0}`,
+          `Destructive actions: ${report.destructiveActions ?? 0}`,
+          `Bytes: ${report.totalBytes ?? 0}`,
+          "",
+          report.actionCounts ? JSON.stringify(report.actionCounts, null, 2) : "",
+          "",
+          ...(report.risks ?? []).map((risk) => `Risk: ${risk}`),
+          report.rollbackRecommendation ? `Rollback: ${report.rollbackRecommendation}` : "",
+        ].filter(Boolean).join("\n"),
+        loading: false,
+      });
+    })
+      .then((nextUnlisten) => {
+        unlistenCodexPlan = nextUnlisten;
       })
       .catch(() => {});
 
     return () => {
-      unlisten?.();
+      unlistenContextMenu?.();
+      unlistenCodexPlan?.();
     };
   }, []);
+
+  useEffect(() => {
+    const localRoots = [
+      leftMode === "local" && !leftLocal.isArchiveView ? leftLocal.path : null,
+      rightMode === "local" && !rightLocal.isArchiveView ? rightLocal.path : null,
+    ].filter((path): path is string => Boolean(path));
+
+    const activeLocalPath =
+      activePanel === "left"
+        ? leftMode === "local" && !leftLocal.isArchiveView
+          ? leftLocal.path
+          : null
+        : rightMode === "local" && !rightLocal.isArchiveView
+          ? rightLocal.path
+          : null;
+
+    codexUpdateActiveContext({
+      activeLocalPath,
+      activeRemotePath: remote.path,
+      activeHostingId: activeHost?.id ?? null,
+      localRoots,
+    }).catch(() => {});
+  }, [
+    activePanel,
+    activeHost?.id,
+    leftLocal.isArchiveView,
+    leftLocal.path,
+    leftMode,
+    remote.path,
+    rightLocal.isArchiveView,
+    rightLocal.path,
+    rightMode,
+  ]);
 
   const openSystemContextMenu = async (panel: ContextMenuPanel, file: FileItem, event: React.MouseEvent) => {
     const panelData = getPanelData(panel);
@@ -889,7 +999,8 @@ const Index = () => {
     if (enabled("combineFiles") && panelData.mode === "local" && getContextSelection(panel, file).length > 1) {
       items.push({ action: "combineFiles", label: t("contextMenu.combineFiles") });
     }
-    if (enabled("rename")) {
+    const panelRenameSupported = !(panelData.mode === "remote" && activeHost?.protocol === "bunnyStorage");
+    if (enabled("rename") && panelRenameSupported) {
       items.push({ action: "rename", label: t("contextMenu.rename"), shortcut: shortcut("F6") });
     }
     if (enabled("delete")) {
@@ -929,6 +1040,7 @@ const Index = () => {
   const activeMenuHasSelection = activeSelectedNames.length > 0;
   const activeMenuIsLocal = activePanelData.mode === "local";
   const activeMenuIsFile = !!activeMenuFile && !activeMenuFile.isDirectory;
+  const activeRenameSupported = !(activePanelData.mode === "remote" && activeHost?.protocol === "bunnyStorage");
 
   const runMenuContextAction = (action: ContextMenuAction, requiresFile = true) => {
     if (requiresFile && !activeMenuFile) return;
@@ -952,7 +1064,7 @@ const Index = () => {
         { id: "upload", label: t("toolbar.upload"), onSelect: transferFlow.copy, disabled: !fileActions.hasSelection },
         { id: "download", label: t("toolbar.download"), onSelect: transferFlow.copy, disabled: !fileActions.hasSelection },
         { id: "copy", label: t("functionKeys.copy"), onSelect: transferFlow.copy, disabled: !fileActions.hasSelection, shortcut: "F5" },
-        { id: "move", label: t("functionKeys.move"), onSelect: fileActions.rename, disabled: !fileActions.hasSelection, shortcut: "F6" },
+        { id: "move", label: t("functionKeys.move"), onSelect: fileActions.rename, disabled: !fileActions.hasSelection || !activeRenameSupported, shortcut: "F6" },
         { id: "copyTo", label: t("contextMenu.copyTo"), onSelect: () => runMenuContextAction("copyTo"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
         { id: "moveTo", label: t("contextMenu.moveTo"), onSelect: () => runMenuContextAction("moveTo"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
         { id: "copyFiles", label: t("contextMenu.copyFiles"), onSelect: () => runMenuContextAction("copyFiles"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
@@ -974,7 +1086,7 @@ const Index = () => {
         { id: "copyBaseName", label: t("contextMenu.copyBaseName"), onSelect: () => runMenuContextAction("copyBaseName"), disabled: !activeMenuHasFile },
         { id: "newFile", label: t("contextMenu.newFile"), onSelect: () => runMenuContextAction("newFile", false), disabled: !activeMenuIsLocal },
         { id: "newFolder", label: t("contextMenu.newFolder"), onSelect: fileActions.createFolder, shortcut: "F7" },
-        { id: "rename", label: t("contextMenu.rename"), onSelect: fileActions.rename, disabled: !activeMenuHasSelection, shortcut: "F6" },
+        { id: "rename", label: t("contextMenu.rename"), onSelect: fileActions.rename, disabled: !activeMenuHasSelection || !activeRenameSupported, shortcut: "F6" },
         { id: "delete", label: t("contextMenu.delete"), onSelect: fileActions.remove, disabled: !activeMenuHasSelection, shortcut: "F8", danger: true },
       ],
     },
@@ -1138,6 +1250,7 @@ const Index = () => {
           else dirCompare.compare(leftPanelData.files, rightPanelData.files);
         }}
         hasSelection={fileActions.hasSelection}
+        canRename={fileActions.hasSelection && activeRenameSupported}
         canOpenArchive={canOpenArchive}
         canCreateArchive={canCreateArchive}
         isComparing={dirCompare.isComparing}
@@ -1276,7 +1389,9 @@ const Index = () => {
         onView={() => setQuickViewOpen((v) => !v)}
         onEdit={() => setEditorOpen(true)}
         onCopy={() => transferFlow.copy()}
-        onMove={() => fileActions.rename()}
+        onMove={() => {
+          if (activeRenameSupported) fileActions.rename();
+        }}
         onNewFolder={() => fileActions.createFolder()}
         onDelete={() => fileActions.remove()}
         onSearch={() => setSearchOpen(true)}
@@ -1343,7 +1458,13 @@ const Index = () => {
         title={assistantResult?.title ?? ""}
         body={assistantResult?.body ?? ""}
         loading={assistantResult?.loading}
-        onClose={() => setAssistantResult(null)}
+        actionLabel={pendingCodexPlanId ? "Confirm plan" : undefined}
+        actionDisabled={codexPlanApproving}
+        onAction={pendingCodexPlanId ? approvePendingCodexPlan : undefined}
+        onClose={() => {
+          setAssistantResult(null);
+          setPendingCodexPlanId(null);
+        }}
       />
 
       {/* Input/Confirm dialogs for file actions */}

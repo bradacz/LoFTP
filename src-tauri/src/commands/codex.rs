@@ -8,19 +8,31 @@ use crate::services::config_store;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
+    collections::HashMap,
     fs,
-    io::Write,
+    io::{Read, Write},
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Mutex,
+    time::SystemTime,
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::oneshot,
+    time::{timeout, Duration},
 };
 use uuid::Uuid;
+
+const MAX_HEADER_BYTES: usize = 64 * 1024;
+const MAX_BODY_BYTES: usize = 512 * 1024;
+const MAX_PREVIEW_BYTES: usize = 128 * 1024;
+const MAX_SECRET_SCAN_FILES: usize = 500;
+const MAX_SECRET_SCAN_FILE_BYTES: usize = 128 * 1024;
+const MAX_SYNC_FILES: usize = 10_000;
+const MAX_SYNC_DEPTH: usize = 24;
+const BRIDGE_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,12 +62,27 @@ pub struct CodexHostingSummary {
 
 pub struct CodexBridgeState {
     runtime: Mutex<Option<CodexBridgeRuntime>>,
+    active_context: Mutex<CodexActiveContext>,
+    pending_plans: Mutex<HashMap<String, CodexPlan>>,
 }
 
 struct CodexBridgeRuntime {
     port: u16,
     session_token: String,
     shutdown: Option<oneshot::Sender<()>>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexActiveContext {
+    #[serde(default)]
+    pub active_local_path: Option<String>,
+    #[serde(default)]
+    pub active_remote_path: Option<String>,
+    #[serde(default)]
+    pub active_hosting_id: Option<String>,
+    #[serde(default)]
+    pub local_roots: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,12 +116,15 @@ struct SyncEntry {
     full_path: Option<String>,
     size: u64,
     is_directory: bool,
+    modified: Option<i64>,
 }
 
 impl CodexBridgeState {
     pub fn new() -> Self {
         Self {
             runtime: Mutex::new(None),
+            active_context: Mutex::new(CodexActiveContext::default()),
+            pending_plans: Mutex::new(HashMap::new()),
         }
     }
 
@@ -149,6 +179,39 @@ impl CodexBridgeState {
                 }
             }
         }
+    }
+
+    fn update_active_context(&self, context: CodexActiveContext) {
+        if let Ok(mut active_context) = self.active_context.lock() {
+            *active_context = context;
+        }
+    }
+
+    fn active_context(&self) -> CodexActiveContext {
+        self.active_context
+            .lock()
+            .map(|context| context.clone())
+            .unwrap_or_default()
+    }
+
+    fn store_pending_plan(&self, plan: CodexPlan) {
+        if let Ok(mut pending_plans) = self.pending_plans.lock() {
+            pending_plans.insert(plan.id.clone(), plan);
+        }
+    }
+
+    fn get_pending_plan(&self, plan_id: &str) -> Option<CodexPlan> {
+        self.pending_plans
+            .lock()
+            .ok()
+            .and_then(|pending_plans| pending_plans.get(plan_id).cloned())
+    }
+
+    fn take_pending_plan(&self, plan_id: &str) -> Option<CodexPlan> {
+        self.pending_plans
+            .lock()
+            .ok()
+            .and_then(|mut pending_plans| pending_plans.remove(plan_id))
     }
 }
 
@@ -236,6 +299,27 @@ pub fn codex_list_hostings() -> Vec<CodexHostingSummary> {
         .collect()
 }
 
+#[tauri::command]
+pub fn codex_update_active_context(
+    state: State<'_, CodexBridgeState>,
+    context: CodexActiveContext,
+) -> Result<(), String> {
+    state.update_active_context(context);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn codex_execute_pending_plan(
+    app: AppHandle,
+    state: State<'_, CodexBridgeState>,
+    plan_id: String,
+) -> Result<Value, String> {
+    let plan = state
+        .take_pending_plan(&plan_id)
+        .ok_or_else(|| "Pending Codex plan not found or already executed".to_string())?;
+    execute_plan(&app, &plan).await
+}
+
 pub fn codex_start_bridge_from_saved_settings(app: AppHandle) {
     let settings = fs::read_to_string(settings_path())
         .ok()
@@ -290,7 +374,12 @@ async fn handle_bridge_connection(
     addr: SocketAddr,
     session_token: String,
 ) -> Result<(), String> {
-    let request = read_http_request(&mut stream).await?;
+    let mut request = read_http_head(&mut stream).await?;
+    if !matches!(request.method.as_str(), "GET" | "POST") {
+        write_json_response(&mut stream, 405, json!({ "error": "Method not allowed" })).await?;
+        return Ok(());
+    }
+
     let tool = request.path.trim_start_matches('/').to_string();
     let is_status = tool == "loftp_get_status" || tool == "status";
     if !is_status && !request.is_authorized(&session_token) {
@@ -299,10 +388,16 @@ async fn handle_bridge_connection(
         return Ok(());
     }
 
-    let body = if request.body.trim().is_empty() {
+    let body_text = read_http_body(
+        &mut stream,
+        std::mem::take(&mut request.initial_body),
+        request.content_length,
+    )
+    .await?;
+    let body = if body_text.trim().is_empty() {
         json!({})
     } else {
-        serde_json::from_str::<Value>(&request.body).unwrap_or_else(|_| json!({}))
+        serde_json::from_str::<Value>(&body_text).unwrap_or_else(|_| json!({}))
     };
 
     let result = handle_bridge_tool(app, &tool, body).await;
@@ -331,12 +426,16 @@ async fn handle_bridge_tool(app: AppHandle, tool: &str, body: Value) -> Result<V
             "requiresToken": true,
         })),
         "loftp_list_hostings" => Ok(json!({ "hostings": codex_list_hostings() })),
-        "loftp_get_active_context" => Ok(json!({
-            "activeContext": null,
-            "note": "Active UI panel context is available inside LoFTP UI; bridge responses never include credentials."
-        })),
+        "loftp_get_active_context" => {
+            let state = app.state::<CodexBridgeState>();
+            Ok(json!({
+                "activeContext": state.active_context(),
+                "note": "Bridge local file access is limited to the active LoFTP local panel roots. Credentials are never included."
+            }))
+        }
         "loftp_list_local" => {
             let path = string_arg(&body, "path")?;
+            let path = resolve_allowed_local_path(&app, &path)?;
             Ok(json!({ "path": path, "items": list_local_metadata(&path)? }))
         }
         "loftp_list_remote" => {
@@ -346,25 +445,33 @@ async fn handle_bridge_tool(app: AppHandle, tool: &str, body: Value) -> Result<V
         }
         "loftp_read_text_file_preview" => {
             let path = string_arg(&body, "path")?;
-            let max_bytes = body.get("maxBytes").and_then(Value::as_u64).unwrap_or(80_000) as usize;
+            let path = resolve_allowed_local_path(&app, &path)?;
+            let max_bytes = body
+                .get("maxBytes")
+                .and_then(Value::as_u64)
+                .unwrap_or(80_000) as usize;
             Ok(json!({ "path": path, "preview": read_text_preview(&path, max_bytes)? }))
         }
         "loftp_scan_for_secrets" => {
             let path = string_arg(&body, "path")?;
+            let path = resolve_allowed_local_path(&app, &path)?;
             Ok(json!({ "path": path, "findings": scan_for_secrets(&path)? }))
         }
         "loftp_analyze_project" => {
             let path = string_arg(&body, "path")?;
+            let path = resolve_allowed_local_path(&app, &path)?;
             Ok(analyze_project(&path))
         }
         "loftp_detect_build_output" => {
             let path = string_arg(&body, "path")?;
+            let path = resolve_allowed_local_path(&app, &path)?;
             Ok(detect_build_output(&path))
         }
         "loftp_compare_paths" => {
             let local_path = string_arg(&body, "localPath")?;
             let remote_path = string_arg(&body, "remotePath")?;
             let hosting_id = string_arg(&body, "hostingId")?;
+            let local_path = resolve_allowed_local_path(&app, &local_path)?;
             let local = list_local_metadata(&local_path)?;
             let remote = list_remote_metadata(&app, &hosting_id, &remote_path).await?;
             Ok(compare_metadata(local, remote))
@@ -373,7 +480,9 @@ async fn handle_bridge_tool(app: AppHandle, tool: &str, body: Value) -> Result<V
             let local_path = string_arg(&body, "localPath")?;
             let remote_path = string_arg(&body, "remotePath")?;
             let hosting_id = body.get("hostingId").and_then(Value::as_str).map(|s| s.to_string());
+            let local_path = resolve_allowed_local_path(&app, &local_path)?;
             let plan = create_upload_plan(&local_path, &remote_path, hosting_id)?;
+            app.state::<CodexBridgeState>().store_pending_plan(plan.clone());
             serde_json::to_value(plan).map_err(|e| e.to_string())
         }
         "loftp_create_sync_plan" => {
@@ -384,23 +493,31 @@ async fn handle_bridge_tool(app: AppHandle, tool: &str, body: Value) -> Result<V
                 .get("includeDeletes")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
+            let local_path = resolve_allowed_local_path(&app, &local_path)?;
             let plan =
                 create_sync_plan(&app, &local_path, &remote_path, &hosting_id, include_deletes)
                     .await?;
+            app.state::<CodexBridgeState>().store_pending_plan(plan.clone());
             serde_json::to_value(plan).map_err(|e| e.to_string())
         }
         "loftp_execute_plan" => {
-            let approved = body.get("approved").and_then(Value::as_bool).unwrap_or(false);
-            let plan_value = body.get("plan").cloned().ok_or_else(|| "Missing plan".to_string())?;
-            let plan: CodexPlan = serde_json::from_value(plan_value).map_err(|e| e.to_string())?;
-            if plan.requires_confirmation && !approved {
-                return Err("Plan requires explicit LoFTP UI confirmation before execution.".to_string());
-            }
+            let state = app.state::<CodexBridgeState>();
+            let plan = if let Some(plan_id) = body.get("planId").and_then(Value::as_str) {
+                state
+                    .get_pending_plan(plan_id)
+                    .ok_or_else(|| "Pending Codex plan not found".to_string())?
+            } else {
+                let plan_value = body.get("plan").cloned().ok_or_else(|| "Missing plan".to_string())?;
+                let plan: CodexPlan = serde_json::from_value(plan_value).map_err(|e| e.to_string())?;
+                state.store_pending_plan(plan.clone());
+                plan
+            };
+            emit_pending_plan(&app, &plan)?;
             Ok(json!({
                 "planId": plan.id,
-                "status": "accepted",
+                "status": "requiresUiConfirmation",
                 "executed": false,
-                "note": "Execution handoff is intentionally gated for LoFTP UI confirmation.",
+                "note": "Plan was handed to LoFTP UI. Confirm it in LoFTP before any mutation runs.",
                 "changeReport": change_report_from_plan(&plan, false)
             }))
         }
@@ -452,13 +569,15 @@ async fn handle_bridge_tool(app: AppHandle, tool: &str, body: Value) -> Result<V
     }
 }
 
-struct HttpRequest {
+struct HttpRequestHead {
+    method: String,
     path: String,
     headers: Vec<(String, String)>,
-    body: String,
+    content_length: usize,
+    initial_body: Vec<u8>,
 }
 
-impl HttpRequest {
+impl HttpRequestHead {
     fn is_authorized(&self, session_token: &str) -> bool {
         self.headers.iter().any(|(key, value)| {
             let key = key.to_ascii_lowercase();
@@ -468,11 +587,14 @@ impl HttpRequest {
     }
 }
 
-async fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
+async fn read_http_head(stream: &mut TcpStream) -> Result<HttpRequestHead, String> {
     let mut buffer = Vec::new();
     let mut temp = [0u8; 4096];
     loop {
-        let n = stream.read(&mut temp).await.map_err(|e| e.to_string())?;
+        let n = timeout(BRIDGE_READ_TIMEOUT, stream.read(&mut temp))
+            .await
+            .map_err(|_| "Bridge request timed out".to_string())?
+            .map_err(|e| e.to_string())?;
         if n == 0 {
             break;
         }
@@ -480,8 +602,8 @@ async fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String
         if buffer.windows(4).any(|window| window == b"\r\n\r\n") {
             break;
         }
-        if buffer.len() > 1024 * 1024 {
-            return Err("Bridge request is too large".to_string());
+        if buffer.len() > MAX_HEADER_BYTES {
+            return Err("Bridge request headers are too large".to_string());
         }
     }
 
@@ -495,6 +617,11 @@ async fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String
     let request_line = lines
         .next()
         .ok_or_else(|| "Missing request line".to_string())?;
+    let method = request_line
+        .split_whitespace()
+        .next()
+        .unwrap_or("GET")
+        .to_ascii_uppercase();
     let path = request_line
         .split_whitespace()
         .nth(1)
@@ -516,22 +643,48 @@ async fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String
         .and_then(|(_, value)| value.parse::<usize>().ok())
         .unwrap_or(0);
 
-    while buffer.len() < header_end + content_length {
-        let n = stream.read(&mut temp).await.map_err(|e| e.to_string())?;
+    if content_length > MAX_BODY_BYTES {
+        return Err("Bridge request body is too large".to_string());
+    }
+
+    let mut initial_body = buffer[header_end..].to_vec();
+    initial_body.truncate(content_length);
+
+    Ok(HttpRequestHead {
+        method,
+        path,
+        headers,
+        content_length,
+        initial_body,
+    })
+}
+
+async fn read_http_body(
+    stream: &mut TcpStream,
+    mut body: Vec<u8>,
+    content_length: usize,
+) -> Result<String, String> {
+    if content_length > MAX_BODY_BYTES {
+        return Err("Bridge request body is too large".to_string());
+    }
+
+    let mut temp = [0u8; 4096];
+    while body.len() < content_length {
+        let n = timeout(BRIDGE_READ_TIMEOUT, stream.read(&mut temp))
+            .await
+            .map_err(|_| "Bridge request body timed out".to_string())?
+            .map_err(|e| e.to_string())?;
         if n == 0 {
             break;
         }
-        buffer.extend_from_slice(&temp[..n]);
+        body.extend_from_slice(&temp[..n]);
+        if body.len() > MAX_BODY_BYTES {
+            return Err("Bridge request body is too large".to_string());
+        }
     }
 
-    let body =
-        String::from_utf8_lossy(&buffer[header_end..buffer.len().min(header_end + content_length)])
-            .to_string();
-    Ok(HttpRequest {
-        path,
-        headers,
-        body,
-    })
+    body.truncate(content_length);
+    Ok(String::from_utf8_lossy(&body).to_string())
 }
 
 async fn write_json_response(
@@ -539,12 +692,12 @@ async fn write_json_response(
     status: u16,
     value: Value,
 ) -> Result<(), String> {
-    let reason = if status == 200 {
-        "OK"
-    } else if status == 401 {
-        "Unauthorized"
-    } else {
-        "Bad Request"
+    let reason = match status {
+        200 => "OK",
+        401 => "Unauthorized",
+        405 => "Method Not Allowed",
+        413 => "Payload Too Large",
+        _ => "Bad Request",
     };
     let body = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
     let response = format!(
@@ -558,6 +711,44 @@ async fn write_json_response(
         .write_all(response.as_bytes())
         .await
         .map_err(|e| e.to_string())
+}
+
+fn resolve_allowed_local_path(app: &AppHandle, path: &str) -> Result<String, String> {
+    let target = fs::canonicalize(path).map_err(|e| format!("Resolve local path failed: {}", e))?;
+    let roots = allowed_local_roots(app);
+
+    if roots.is_empty() {
+        return Err(
+            "No active LoFTP local context is available. Open the target folder in a LoFTP local panel first."
+                .to_string(),
+        );
+    }
+
+    if roots.iter().any(|root| target.starts_with(root)) {
+        return Ok(target.to_string_lossy().to_string());
+    }
+
+    Err("Local path is outside the active LoFTP local context".to_string())
+}
+
+fn allowed_local_roots(app: &AppHandle) -> Vec<PathBuf> {
+    let state = app.state::<CodexBridgeState>();
+    let context = state.active_context();
+    let mut roots: Vec<PathBuf> = context
+        .local_roots
+        .iter()
+        .filter_map(|root| fs::canonicalize(root).ok())
+        .collect();
+
+    if let Some(env_roots) = std::env::var_os("LOFTP_CODEX_ALLOWED_ROOTS") {
+        roots.extend(
+            std::env::split_paths(&env_roots).filter_map(|root| fs::canonicalize(root).ok()),
+        );
+    }
+
+    roots.sort();
+    roots.dedup();
+    roots
 }
 
 fn string_arg(body: &Value, key: &str) -> Result<String, String> {
@@ -638,9 +829,13 @@ async fn list_remote_metadata(
 }
 
 fn read_text_preview(path: &str, max_bytes: usize) -> Result<String, String> {
-    let bytes = fs::read(path).map_err(|e| format!("Read preview failed: {}", e))?;
-    let clipped = &bytes[..bytes.len().min(max_bytes)];
-    Ok(redact_text(&String::from_utf8_lossy(clipped)))
+    let max_bytes = max_bytes.min(MAX_PREVIEW_BYTES);
+    let file = fs::File::open(path).map_err(|e| format!("Read preview failed: {}", e))?;
+    let mut bytes = Vec::with_capacity(max_bytes);
+    file.take(max_bytes as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("Read preview failed: {}", e))?;
+    Ok(redact_text(&String::from_utf8_lossy(&bytes)))
 }
 
 fn scan_for_secrets(path: &str) -> Result<Vec<Value>, String> {
@@ -649,6 +844,7 @@ fn scan_for_secrets(path: &str) -> Result<Vec<Value>, String> {
         walkdir::WalkDir::new(path)
             .max_depth(4)
             .into_iter()
+            .filter_entry(|entry| !should_skip_secret_scan_entry(entry.path()))
             .filter_map(Result::ok)
             .filter(|entry| entry.file_type().is_file())
             .map(|entry| entry.path().to_path_buf())
@@ -657,8 +853,8 @@ fn scan_for_secrets(path: &str) -> Result<Vec<Value>, String> {
         vec![PathBuf::from(path)]
     };
 
-    for file in paths.into_iter().take(500) {
-        let Ok(raw) = fs::read_to_string(&file) else {
+    for file in paths.into_iter().take(MAX_SECRET_SCAN_FILES) {
+        let Ok(raw) = read_limited_text(&file, MAX_SECRET_SCAN_FILE_BYTES) else {
             continue;
         };
         for (line_index, line) in raw.lines().enumerate() {
@@ -671,7 +867,7 @@ fn scan_for_secrets(path: &str) -> Result<Vec<Value>, String> {
                 || lower.contains("token")
                 || file
                     .file_name()
-                    .map(|name| name.to_string_lossy() == ".env")
+                    .map(|name| name.to_string_lossy().starts_with(".env"))
                     .unwrap_or(false)
             {
                 findings.push(json!({
@@ -684,6 +880,26 @@ fn scan_for_secrets(path: &str) -> Result<Vec<Value>, String> {
     }
 
     Ok(findings)
+}
+
+fn read_limited_text(path: &Path, max_bytes: usize) -> Result<String, String> {
+    let file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::with_capacity(max_bytes);
+    file.take(max_bytes as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&bytes).to_string())
+}
+
+fn should_skip_secret_scan_entry(path: &Path) -> bool {
+    path.file_name()
+        .map(|name| {
+            matches!(
+                name.to_string_lossy().as_ref(),
+                ".git" | "node_modules" | "target" | "dist" | "build" | ".next" | ".cache"
+            )
+        })
+        .unwrap_or(false)
 }
 
 fn analyze_project(path: &str) -> Value {
@@ -777,6 +993,7 @@ fn create_upload_plan(
         });
     } else {
         for entry in walkdir::WalkDir::new(root)
+            .max_depth(MAX_SYNC_DEPTH + 1)
             .into_iter()
             .filter_map(Result::ok)
             .filter(|entry| entry.file_type().is_file())
@@ -807,6 +1024,12 @@ fn create_upload_plan(
                 destructive: true,
                 reason: Some("Upload plan action.".to_string()),
             });
+            if actions.len() > MAX_SYNC_FILES {
+                return Err(format!(
+                    "Upload plan exceeds the {} file limit",
+                    MAX_SYNC_FILES
+                ));
+            }
         }
     }
 
@@ -849,10 +1072,33 @@ async fn create_sync_plan(
         }
         let remote = remote_by_rel.get(&local.rel_path);
         let remote_target = join_remote_path(remote_path, &local.rel_path);
-        let action_type = match remote {
-            None => "uploadNewFile",
-            Some(remote) if remote.size != local.size => "uploadChangedFile",
-            Some(_) => "skipSameFile",
+        let (action_type, reason) = match remote {
+            None => (
+                "uploadNewFile",
+                "Local file does not exist remotely.".to_string(),
+            ),
+            Some(remote) if remote.size != local.size => (
+                "uploadChangedFile",
+                "Local and remote file sizes differ.".to_string(),
+            ),
+            Some(remote) => match (local.modified, remote.modified) {
+                (Some(local_modified), Some(remote_modified))
+                    if remote_modified >= local_modified =>
+                {
+                    (
+                        "skipSameFile",
+                        "Local and remote sizes match, and remote mtime is not older.".to_string(),
+                    )
+                }
+                (Some(_), Some(_)) => (
+                    "uploadChangedFile",
+                    "Local file has a newer mtime than the remote file.".to_string(),
+                ),
+                _ => (
+                    "uploadChangedFile",
+                    "Sizes match, but modification times could not be verified safely.".to_string(),
+                ),
+            },
         };
         let destructive = matches!(action_type, "uploadChangedFile");
         if is_risky_deploy_path(&local.rel_path) {
@@ -867,11 +1113,7 @@ async fn create_sync_plan(
             remote_path: Some(remote_target),
             size: Some(local.size),
             destructive,
-            reason: Some(match action_type {
-                "uploadNewFile" => "Local file does not exist remotely.".to_string(),
-                "uploadChangedFile" => "Local and remote file sizes differ.".to_string(),
-                _ => "Local and remote file sizes match.".to_string(),
-            }),
+            reason: Some(reason),
         });
     }
 
@@ -933,11 +1175,13 @@ fn collect_local_sync_entries(root: &str) -> Result<Vec<SyncEntry>, String> {
             full_path: Some(root.to_string()),
             size: metadata.len(),
             is_directory: false,
+            modified: modified_unix(metadata.modified().ok()),
         }]);
     }
 
     let mut entries = Vec::new();
     for entry in walkdir::WalkDir::new(root_path)
+        .max_depth(MAX_SYNC_DEPTH + 1)
         .into_iter()
         .filter_map(Result::ok)
     {
@@ -960,7 +1204,14 @@ fn collect_local_sync_entries(root: &str) -> Result<Vec<SyncEntry>, String> {
                 0
             },
             is_directory: metadata.is_dir(),
+            modified: modified_unix(metadata.modified().ok()),
         });
+        if entries.len() > MAX_SYNC_FILES {
+            return Err(format!(
+                "Sync plan exceeds the {} file limit",
+                MAX_SYNC_FILES
+            ));
+        }
     }
     Ok(entries)
 }
@@ -971,7 +1222,7 @@ async fn collect_remote_sync_entries(
     remote_root: &str,
 ) -> Result<Vec<SyncEntry>, String> {
     let mut entries = Vec::new();
-    collect_remote_sync_entries_inner(app, hosting_id, remote_root, "", &mut entries).await?;
+    collect_remote_sync_entries_inner(app, hosting_id, remote_root, "", 0, &mut entries).await?;
     Ok(entries)
 }
 
@@ -980,8 +1231,16 @@ async fn collect_remote_sync_entries_inner(
     hosting_id: &str,
     remote_root: &str,
     rel_prefix: &str,
+    depth: usize,
     entries: &mut Vec<SyncEntry>,
 ) -> Result<(), String> {
+    if depth > MAX_SYNC_DEPTH {
+        return Err(format!(
+            "Remote sync traversal exceeds depth limit {}",
+            MAX_SYNC_DEPTH
+        ));
+    }
+
     let current = if rel_prefix.is_empty() {
         remote_root.to_string()
     } else {
@@ -1000,13 +1259,21 @@ async fn collect_remote_sync_entries_inner(
             full_path: Some(full_path),
             size: item.size,
             is_directory: item.is_directory,
+            modified: parse_modified_time(&item.modified),
         });
+        if entries.len() > MAX_SYNC_FILES {
+            return Err(format!(
+                "Sync plan exceeds the {} file limit",
+                MAX_SYNC_FILES
+            ));
+        }
         if item.is_directory {
             Box::pin(collect_remote_sync_entries_inner(
                 app,
                 hosting_id,
                 remote_root,
                 &rel_path,
+                depth + 1,
                 entries,
             ))
             .await?;
@@ -1023,6 +1290,26 @@ fn join_remote_path(base: &str, rel_path: &str) -> String {
     )
 }
 
+fn modified_unix(time: Option<SystemTime>) -> Option<i64> {
+    time.and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs() as i64)
+}
+
+fn parse_modified_time(value: &str) -> Option<i64> {
+    if value == "—" || value.trim().is_empty() {
+        return None;
+    }
+    if let Ok(seconds) = value.parse::<i64>() {
+        return Some(seconds);
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(value) {
+        return Some(dt.timestamp());
+    }
+    chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M")
+        .ok()
+        .map(|dt| dt.and_utc().timestamp())
+}
+
 fn is_risky_deploy_path(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
     lower.contains(".env")
@@ -1030,6 +1317,201 @@ fn is_risky_deploy_path(path: &str) -> bool {
         || lower.ends_with(".map")
         || lower.contains("/.git/")
         || lower.ends_with(".log")
+}
+
+fn emit_pending_plan(app: &AppHandle, plan: &CodexPlan) -> Result<(), String> {
+    let report = change_report_from_plan(plan, false);
+    app.emit(
+        "loftp-codex-plan-pending",
+        json!({
+            "planId": plan.id,
+            "kind": plan.kind,
+            "hostingId": plan.hosting_id.as_deref(),
+            "localBasePath": plan.local_base_path.as_deref(),
+            "remoteBasePath": plan.remote_base_path.as_deref(),
+            "report": report,
+        }),
+    )
+    .map_err(|e| format!("Emit pending plan failed: {}", e))
+}
+
+async fn execute_plan(app: &AppHandle, plan: &CodexPlan) -> Result<Value, String> {
+    let hosting_id = plan
+        .hosting_id
+        .as_deref()
+        .ok_or_else(|| "Plan is missing hostingId".to_string())?;
+    let mut executed = 0usize;
+    let mut skipped = 0usize;
+    let mut failed = 0usize;
+    let mut errors = Vec::new();
+
+    for action in &plan.actions {
+        let result = match action.action_type.as_str() {
+            "uploadFile" | "uploadNewFile" | "uploadChangedFile" => {
+                let local_path = action
+                    .local_path
+                    .as_deref()
+                    .ok_or_else(|| "Upload action is missing localPath".to_string());
+                let remote_path = action
+                    .remote_path
+                    .as_deref()
+                    .ok_or_else(|| "Upload action is missing remotePath".to_string());
+                match (local_path, remote_path) {
+                    (Ok(local_path), Ok(remote_path)) => {
+                        remote_upload_file(app, hosting_id, local_path, remote_path).await
+                    }
+                    (Err(error), _) | (_, Err(error)) => Err(error),
+                }
+            }
+            "deleteRemoteFile" => {
+                let remote_path = action
+                    .remote_path
+                    .as_deref()
+                    .ok_or_else(|| "Delete action is missing remotePath".to_string());
+                match remote_path {
+                    Ok(remote_path) => remote_delete_file(app, hosting_id, remote_path).await,
+                    Err(error) => Err(error),
+                }
+            }
+            "skipSameFile" | "remoteOnlyFile" => {
+                skipped += 1;
+                continue;
+            }
+            other => {
+                skipped += 1;
+                audit("loftp_execute_plan_action", false, Some(other));
+                continue;
+            }
+        };
+
+        match result {
+            Ok(()) => {
+                executed += 1;
+                audit("loftp_execute_plan_action", true, None);
+            }
+            Err(error) => {
+                failed += 1;
+                audit("loftp_execute_plan_action", false, Some(&error));
+                errors.push(json!({
+                    "actionType": action.action_type,
+                    "localPath": action.local_path.as_deref(),
+                    "remotePath": action.remote_path.as_deref(),
+                    "error": redact_text(&error),
+                }));
+            }
+        }
+    }
+
+    Ok(json!({
+        "planId": plan.id,
+        "status": if failed == 0 { "done" } else { "partial" },
+        "executed": true,
+        "executedActions": executed,
+        "skippedActions": skipped,
+        "failedActions": failed,
+        "errors": errors,
+        "changeReport": change_report_from_plan(plan, true),
+    }))
+}
+
+async fn remote_upload_file(
+    app: &AppHandle,
+    hosting_id: &str,
+    local_path: &str,
+    remote_path: &str,
+) -> Result<(), String> {
+    match load_hosting_protocol(hosting_id)? {
+        Protocol::Ftp | Protocol::Ftps => {
+            let state = app.state::<FtpState>();
+            let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+            let session = sessions
+                .get_mut(hosting_id)
+                .ok_or_else(|| "FTP profile is not connected in LoFTP".to_string())?;
+            if let Some(parent) = remote_parent_path(remote_path) {
+                session.mkdir_p(&parent)?;
+            }
+            session.upload_with_progress(local_path, remote_path, |_, _| {})
+        }
+        Protocol::Sftp => {
+            let state = app.state::<SftpState>();
+            let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+            let session = sessions
+                .get_mut(hosting_id)
+                .ok_or_else(|| "SFTP profile is not connected in LoFTP".to_string())?;
+            if let Some(parent) = remote_parent_path(remote_path) {
+                session.mkdir_p(&parent)?;
+            }
+            session.upload_with_progress(local_path, remote_path, |_, _| {})
+        }
+        Protocol::BunnyStorage => {
+            let session = {
+                let state = app.state::<BunnyStorageState>();
+                let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+                sessions
+                    .get(hosting_id)
+                    .cloned()
+                    .ok_or_else(|| "Bunny Storage profile is not connected in LoFTP".to_string())?
+            };
+            session
+                .upload_file(local_path, remote_path)
+                .await
+                .map(|_| ())
+        }
+    }
+}
+
+async fn remote_delete_file(
+    app: &AppHandle,
+    hosting_id: &str,
+    remote_path: &str,
+) -> Result<(), String> {
+    match load_hosting_protocol(hosting_id)? {
+        Protocol::Ftp | Protocol::Ftps => {
+            let state = app.state::<FtpState>();
+            let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+            let session = sessions
+                .get_mut(hosting_id)
+                .ok_or_else(|| "FTP profile is not connected in LoFTP".to_string())?;
+            session.delete_file(remote_path)
+        }
+        Protocol::Sftp => {
+            let state = app.state::<SftpState>();
+            let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+            let session = sessions
+                .get_mut(hosting_id)
+                .ok_or_else(|| "SFTP profile is not connected in LoFTP".to_string())?;
+            session.delete_file(remote_path)
+        }
+        Protocol::BunnyStorage => {
+            let session = {
+                let state = app.state::<BunnyStorageState>();
+                let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+                sessions
+                    .get(hosting_id)
+                    .cloned()
+                    .ok_or_else(|| "Bunny Storage profile is not connected in LoFTP".to_string())?
+            };
+            session.delete(remote_path).await
+        }
+    }
+}
+
+fn load_hosting_protocol(hosting_id: &str) -> Result<Protocol, String> {
+    config_store::load_hostings()
+        .into_iter()
+        .find(|hosting| hosting.id == hosting_id)
+        .map(|hosting| hosting.protocol)
+        .ok_or_else(|| "Hosting profile not found".to_string())
+}
+
+fn remote_parent_path(path: &str) -> Option<String> {
+    let trimmed = path.trim_end_matches('/');
+    let (parent, _) = trimmed.rsplit_once('/')?;
+    if parent.is_empty() {
+        None
+    } else {
+        Some(parent.to_string())
+    }
 }
 
 fn change_report_from_plan(plan: &CodexPlan, executed: bool) -> Value {

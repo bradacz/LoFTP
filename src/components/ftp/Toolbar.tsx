@@ -64,6 +64,7 @@ interface ToolbarProps {
   onOpenArchive: () => void;
   onCreateArchive: () => void;
   hasSelection: boolean;
+  canRename: boolean;
   canOpenArchive: boolean;
   canCreateArchive: boolean;
   isComparing?: boolean;
@@ -88,6 +89,7 @@ export function Toolbar({
   onOpenArchive,
   onCreateArchive,
   hasSelection,
+  canRename,
   canOpenArchive,
   canCreateArchive,
   isComparing,
@@ -114,7 +116,7 @@ export function Toolbar({
       <div className="w-px h-5 bg-divider mx-1" />
 
       <ToolbarIconButton icon={<RiFolderAddFill className={toolbarIconClassName} />} label={t("toolbar.folder")} onClick={onNewFolder} />
-      <ToolbarIconButton icon={<RiEdit2Fill className={toolbarIconClassName} />} label={t("toolbar.rename")} onClick={onRename} disabled={!hasSelection} />
+      <ToolbarIconButton icon={<RiEdit2Fill className={toolbarIconClassName} />} label={t("toolbar.rename")} onClick={onRename} disabled={!canRename} />
       <ToolbarIconButton
         icon={<RiDeleteBin6Fill className={toolbarIconClassName} />}
         label={t("toolbar.delete")}

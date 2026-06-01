@@ -430,6 +430,13 @@ export interface CodexHostingSummary {
   pullZoneUrl?: string | null;
 }
 
+export interface CodexActiveContext {
+  activeLocalPath?: string | null;
+  activeRemotePath?: string | null;
+  activeHostingId?: string | null;
+  localRoots: string[];
+}
+
 export async function codexGetBridgeSettings(): Promise<CodexBridgeSettings> {
   return invoke("codex_get_bridge_settings");
 }
@@ -440,6 +447,14 @@ export async function codexSaveBridgeSettings(settings: CodexBridgeSettings): Pr
 
 export async function codexListHostings(): Promise<CodexHostingSummary[]> {
   return invoke("codex_list_hostings");
+}
+
+export async function codexUpdateActiveContext(context: CodexActiveContext): Promise<void> {
+  return invoke("codex_update_active_context", { context });
+}
+
+export async function codexExecutePendingPlan(planId: string): Promise<unknown> {
+  return invoke("codex_execute_pending_plan", { planId });
 }
 
 // --- UI ---
