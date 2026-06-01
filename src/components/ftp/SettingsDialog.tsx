@@ -281,10 +281,10 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
     <Dialog open={open} onOpenChange={(nextOpen) => {
       if (!nextOpen) onClose();
     }}>
-      <DialogContent className="max-h-[calc(100vh-24px)] max-w-[920px] gap-0 overflow-hidden rounded-2xl border-border bg-card p-0 shadow-2xl">
-        <div className="grid h-[min(720px,calc(100vh-24px))] min-h-0 grid-cols-[230px_1fr]">
-          <aside className="border-r border-border bg-toolbar p-4">
-            <div className="mb-5 flex items-center gap-3">
+      <DialogContent className="max-h-[calc(100dvh-24px)] w-[calc(100vw-24px)] max-w-[920px] gap-0 overflow-hidden rounded-2xl border-border bg-card p-0 shadow-2xl">
+        <div className="grid h-[min(720px,calc(100dvh-24px))] min-h-0 grid-cols-1 grid-rows-[auto_1fr] sm:grid-cols-[230px_1fr] sm:grid-rows-1">
+          <aside className="min-h-0 overflow-y-auto border-b border-border bg-toolbar p-3 sm:border-b-0 sm:border-r sm:p-4">
+            <div className="mb-3 flex items-center gap-3 sm:mb-5">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
                 <Settings className="h-5 w-5" />
               </div>
@@ -294,14 +294,14 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
               </div>
             </div>
 
-            <nav className="space-y-1">
+            <nav className="flex gap-1 overflow-x-auto pb-1 sm:block sm:space-y-1 sm:overflow-visible sm:pb-0">
               {sections.map((section) => (
                 <button
                   key={section.id}
                   type="button"
                   onClick={() => setActiveSection(section.id)}
                   className={cn(
-                    "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-semibold transition-colors",
+                    "flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-semibold transition-colors sm:w-full",
                     activeSection === section.id
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-muted-foreground hover:bg-panel-header hover:text-foreground"
@@ -314,12 +314,12 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
             </nav>
           </aside>
 
-          <main className="flex min-w-0 flex-col bg-card">
-            <div className="border-b border-border bg-panel-header px-6 py-4">
+          <main className="flex min-h-0 min-w-0 flex-col bg-card">
+            <div className="shrink-0 border-b border-border bg-panel-header px-4 py-3 sm:px-6 sm:py-4">
               <h4 className="text-lg font-semibold tracking-tight">{sections.find((s) => s.id === activeSection)?.label}</h4>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
               {activeSection === "general" && (
                 <SettingsCard title={t("settings.language")} icon={<Laptop className="h-4 w-4 text-sky-500" />}>
                   <div className="grid grid-cols-6 gap-2">
@@ -505,7 +505,7 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                         {codexConnectorStatus?.pluginPath && <div className="truncate">{t("settings.codexConnectorPath")}: {codexConnectorStatus.pluginPath}</div>}
                         {codexConnectorStatus?.nodeCommand && <div className="truncate">{t("settings.codexConnectorNode")}: {codexConnectorStatus.nodeCommand}</div>}
                         {codexConnectorStatus && (
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-1 pt-1">
+                          <div className="grid gap-x-3 gap-y-1 pt-1 sm:grid-cols-2">
                             <span>{t("settings.codexConnectorServer")}: {codexConnectorStatus.mcpServerExists ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}</span>
                             <span>{t("settings.codexConnectorConfig")}: {codexConnectorStatus.connectorConfigValid ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}</span>
                             <span>{t("settings.codexConnectorMarketplace")}: {codexConnectorStatus.marketplaceEntryExists ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}</span>
@@ -513,7 +513,7 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                           </div>
                         )}
                       </div>
-                      <div className="flex justify-end gap-2">
+                      <div className="flex flex-wrap justify-end gap-2">
                         <button
                           type="button"
                           onClick={testCodexConnector}
