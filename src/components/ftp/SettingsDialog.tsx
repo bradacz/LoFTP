@@ -20,6 +20,7 @@ import { useI18n } from "@/i18n";
 import { messages as localeMessages } from "@/i18n/messages";
 import { cn } from "@/lib/utils";
 import {
+  aiDeleteApiKey,
   aiGetSettings,
   aiSaveSettings,
   aiTestSettings,
@@ -44,15 +45,33 @@ interface SettingsDialogProps {
 
 type SettingsSection = "general" | "appearance" | "context" | "ai" | "codex" | "integrations" | "license";
 
+const DEFAULT_AI_PROVIDER = "openai";
 const AI_PROVIDERS = [
-  "OpenAI",
-  "Claude",
-  "Gemini",
-  "Perplexity",
-  "OpenAI-compatible API",
-  "OpenCode API",
-  "NVIDIA",
-];
+  { value: "openai", label: "OpenAI" },
+  { value: "claude", label: "Claude" },
+  { value: "gemini", label: "Gemini" },
+  { value: "perplexity", label: "Perplexity" },
+  { value: "openai-compatible-api", label: "OpenAI-compatible API" },
+  { value: "opencode-api", label: "OpenCode API" },
+  { value: "nvidia", label: "NVIDIA" },
+] as const;
+const AI_PROVIDER_VALUES = new Set(AI_PROVIDERS.map((provider) => provider.value));
+
+function normalizeAiProviderValue(provider: string | null | undefined) {
+  const normalized = (provider ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/_/g, "-");
+  const aliases: Record<string, string> = {
+    anthropic: "claude",
+    "google-gemini": "gemini",
+  };
+  const value = aliases[normalized] ?? normalized;
+  return AI_PROVIDER_VALUES.has(value as (typeof AI_PROVIDERS)[number]["value"])
+    ? value
+    : DEFAULT_AI_PROVIDER;
+}
 
 const CONTEXT_MENU_GROUPS: Array<{ titleKey: string; actions: ContextMenuAction[] }> = [
   { titleKey: "settings.contextMenuClipboard", actions: ["copyPath", "copyName", "copyBaseName", "copyFiles", "pasteFiles"] },
@@ -70,10 +89,12 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
   const [activating, setActivating] = useState(false);
   const [activationError, setActivationError] = useState<string | null>(null);
   const [transferAvailable, setTransferAvailable] = useState(false);
-  const [aiProvider, setAiProvider] = useState("OpenAI");
+  const [aiProvider, setAiProvider] = useState(DEFAULT_AI_PROVIDER);
   const [aiModel, setAiModel] = useState("");
   const [aiBaseUrl, setAiBaseUrl] = useState("");
   const [aiKey, setAiKey] = useState("");
+  const [aiApiKeyConfigured, setAiApiKeyConfigured] = useState(false);
+  const [aiApiKeyProvider, setAiApiKeyProvider] = useState(DEFAULT_AI_PROVIDER);
   const [codexBridgeEnabled, setCodexBridgeEnabled] = useState(false);
   const [codexPort, setCodexPort] = useState("17642");
   const [codexBridgeRunning, setCodexBridgeRunning] = useState(false);
@@ -89,6 +110,7 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
   const [testingCodexConnector, setTestingCodexConnector] = useState(false);
   const { isActivated, licenseKey, activate } = useLicense();
   const { locale, setLocale, languages, t } = useI18n();
+  const currentAiKeyConfigured = aiApiKeyConfigured && aiApiKeyProvider === aiProvider;
 
   const handleActivate = async (forceTransfer = false) => {
     if (!activationCode.trim()) return;
@@ -118,9 +140,12 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
 
     aiGetSettings()
       .then((settings) => {
-        setAiProvider(settings.provider);
+        const provider = normalizeAiProviderValue(settings.provider);
+        setAiProvider(provider);
         setAiModel(settings.model);
         setAiBaseUrl(settings.baseUrl ?? "");
+        setAiApiKeyConfigured(settings.apiKeyConfigured);
+        setAiApiKeyProvider(provider);
       })
       .catch(() => {});
 
@@ -143,12 +168,33 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
   const saveAi = async () => {
     setSavingAi(true);
     try {
-      await aiSaveSettings({
+      const settings = await aiSaveSettings({
         provider: aiProvider,
         model: aiModel,
         baseUrl: aiBaseUrl || null,
         apiKey: aiKey || null,
       });
+      const provider = normalizeAiProviderValue(settings.provider);
+      setAiProvider(provider);
+      setAiModel(settings.model);
+      setAiBaseUrl(settings.baseUrl ?? "");
+      setAiApiKeyConfigured(settings.apiKeyConfigured);
+      setAiApiKeyProvider(provider);
+      setAiKey("");
+      toast.success(t("common.saveChanges"));
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setSavingAi(false);
+    }
+  };
+
+  const removeAiKey = async () => {
+    setSavingAi(true);
+    try {
+      await aiDeleteApiKey(aiProvider);
+      setAiApiKeyConfigured(false);
+      setAiApiKeyProvider(aiProvider);
       setAiKey("");
       toast.success(t("common.saveChanges"));
     } catch (error) {
@@ -404,7 +450,7 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                     <Field label={t("settings.aiProviders")}>
                       <select value={aiProvider} onChange={(e) => setAiProvider(e.target.value)} className="settings-input">
                         {AI_PROVIDERS.map((provider) => (
-                          <option key={provider} value={provider}>{provider}</option>
+                          <option key={provider.value} value={provider.value}>{provider.label}</option>
                         ))}
                       </select>
                     </Field>
@@ -421,13 +467,29 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                   <div className="mt-4 flex items-center justify-between rounded-lg border border-border bg-background px-3 py-3">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <KeyRound className="h-4 w-4 text-primary" />
-                      <span>{t("settings.aiApiKeyConfigured")}</span>
+                      <span>{currentAiKeyConfigured ? t("settings.aiApiKeyConfigured") : t("settings.aiApiKeyMissing")}</span>
+                      <span className={cn(
+                        "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
+                        currentAiKeyConfigured
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                          : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                      )}>
+                        {currentAiKeyConfigured ? t("settings.aiConfigured") : t("settings.aiMissing")}
+                      </span>
                     </div>
                     <div className="flex gap-2">
                       <button
                         type="button"
+                        onClick={removeAiKey}
+                        disabled={savingAi || !currentAiKeyConfigured}
+                        className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-file-hover disabled:opacity-40"
+                      >
+                        {t("settings.aiRemoveSecret")}
+                      </button>
+                      <button
+                        type="button"
                         onClick={testAi}
-                        disabled={testingAi}
+                        disabled={testingAi || !aiProvider || !aiModel}
                         className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-file-hover disabled:opacity-40"
                       >
                         {testingAi ? "..." : t("settings.aiTest")}
@@ -435,7 +497,7 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                       <button
                         type="button"
                         onClick={saveAi}
-                        disabled={savingAi || !aiProvider || !aiModel}
+                        disabled={savingAi || !aiProvider}
                         className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-40"
                       >
                         {savingAi ? "..." : t("common.save")}

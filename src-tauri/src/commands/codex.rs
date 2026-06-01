@@ -1023,7 +1023,6 @@ fn install_connector_plugin_atomically(
             .map_err(|e| format!("Remove old temporary Codex connector failed: {}", e))?;
     }
     copy_dir_all(source, &temp_path)?;
-    write_installed_mcp_config(&temp_path, node_command)?;
     if destination.exists() {
         if backup_path.exists() {
             fs::remove_dir_all(&backup_path)
@@ -1038,6 +1037,15 @@ fn install_connector_plugin_atomically(
         }
         let _ = fs::remove_dir_all(&temp_path);
         return Err(format!("Install Codex connector failed: {}", error));
+    }
+    if let Err(error) = write_installed_mcp_config(destination, node_command)
+        .and_then(|_| validate_installed_mcp_config(destination))
+    {
+        let _ = fs::remove_dir_all(destination);
+        if backup_path.exists() {
+            let _ = fs::rename(&backup_path, destination);
+        }
+        return Err(error);
     }
     if backup_path.exists() {
         let _ = fs::remove_dir_all(&backup_path);
@@ -1079,6 +1087,22 @@ fn write_installed_mcp_config(plugin_path: &Path, node_command: &Path) -> Result
         serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())
+}
+
+fn validate_installed_mcp_config(plugin_path: &Path) -> Result<(), String> {
+    let state = read_mcp_config_state(plugin_path);
+    if !state.valid {
+        return Err(state
+            .error
+            .unwrap_or_else(|| "Installed MCP config is invalid.".to_string()));
+    }
+    let Some(script_path) = state.server_script_path else {
+        return Err("MCP config is missing server script path.".to_string());
+    };
+    if !script_path.starts_with(plugin_path) {
+        return Err("MCP server script path points outside the installed connector.".to_string());
+    }
+    Ok(())
 }
 
 fn update_personal_marketplace(path: &Path) -> Result<(), String> {
