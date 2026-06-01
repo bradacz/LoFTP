@@ -1,3 +1,5 @@
+export type HostingProtocol = "ftp" | "ftps" | "sftp" | "bunnyStorage";
+
 export interface HostingConfig {
   id: string;
   name: string;
@@ -5,9 +7,11 @@ export interface HostingConfig {
   port: number;
   username: string;
   password: string;
-  protocol: "ftp" | "sftp";
+  protocol: HostingProtocol;
   useTls?: boolean;
   sshKeyPath?: string;
+  storageZoneName?: string;
+  pullZoneUrl?: string;
 }
 
 export interface FileItem {

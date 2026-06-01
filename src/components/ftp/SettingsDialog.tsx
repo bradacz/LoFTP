@@ -19,7 +19,8 @@ import { useLicense } from "@/hooks/useLicense";
 import { useI18n } from "@/i18n";
 import { messages as localeMessages } from "@/i18n/messages";
 import { cn } from "@/lib/utils";
-import { aiGetSettings, aiSaveSettings, aiTestSettings, codexGetBridgeSettings, codexSaveBridgeSettings } from "@/lib/tauri";
+import { aiGetSettings, aiSaveSettings, aiTestSettings, codexGetBridgeSettings, codexListHostings, codexSaveBridgeSettings } from "@/lib/tauri";
+import type { CodexHostingSummary } from "@/lib/tauri";
 import { toast } from "@/components/ui/sonner";
 import type { ContextMenuAction, ContextMenuSettings } from "@/types/contextMenu";
 import { DEFAULT_CONTEXT_MENU_SETTINGS, getContextMenuSettings, resetContextMenuSettings, saveContextMenuSettings } from "@/lib/contextMenuSettings";
@@ -65,6 +66,9 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
   const [aiKey, setAiKey] = useState("");
   const [codexBridgeEnabled, setCodexBridgeEnabled] = useState(false);
   const [codexPort, setCodexPort] = useState("17642");
+  const [codexBridgeRunning, setCodexBridgeRunning] = useState(false);
+  const [codexSessionToken, setCodexSessionToken] = useState<string | null>(null);
+  const [codexHostings, setCodexHostings] = useState<CodexHostingSummary[]>([]);
   const [contextMenuSettings, setContextMenuSettings] = useState<ContextMenuSettings>(DEFAULT_CONTEXT_MENU_SETTINGS);
   const [savingAi, setSavingAi] = useState(false);
   const [testingAi, setTestingAi] = useState(false);
@@ -110,8 +114,13 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
       .then((settings) => {
         setCodexBridgeEnabled(settings.enabled);
         setCodexPort(String(settings.port));
+        setCodexBridgeRunning(Boolean(settings.running));
+        setCodexSessionToken(settings.sessionToken ?? null);
       })
       .catch(() => {});
+    codexListHostings()
+      .then(setCodexHostings)
+      .catch(() => setCodexHostings([]));
   }, [open]);
 
   const saveAi = async () => {
@@ -153,6 +162,8 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
         port: Number.isFinite(port) ? port : 17642,
       });
       setCodexPort(String(settings.port));
+      setCodexBridgeRunning(Boolean(settings.running));
+      setCodexSessionToken(settings.sessionToken ?? null);
       toast.success(t("common.saveChanges"));
     } catch (error) {
       toast.error(String(error));
@@ -368,6 +379,37 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                     </Field>
                     <div className="rounded-lg border border-border bg-background px-3 py-3 text-xs text-muted-foreground">
                       {t("settings.codexBridgeHint")}
+                    </div>
+                    <div className="grid gap-2 rounded-lg border border-border bg-background px-3 py-3 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Status</span>
+                        <span className={codexBridgeRunning ? "font-semibold text-green-600 dark:text-green-400" : "font-semibold text-muted-foreground"}>
+                          {codexBridgeRunning ? "Running on 127.0.0.1" : "Stopped"}
+                        </span>
+                      </div>
+                      {codexSessionToken && (
+                        <div className="grid gap-1">
+                          <span className="text-muted-foreground">Session token</span>
+                          <code className="break-all rounded border border-border bg-panel-header px-2 py-1 text-[11px] text-foreground">
+                            {codexSessionToken}
+                          </code>
+                        </div>
+                      )}
+                      <p className="text-muted-foreground">
+                        Codex receives profile metadata and file listings only. Passwords, API keys and SSH material stay in LoFTP.
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background px-3 py-3 text-xs">
+                      <div className="mb-2 font-semibold text-foreground">Available profiles</div>
+                      <div className="space-y-1 text-muted-foreground">
+                        {codexHostings.length === 0 && <div>No profiles saved.</div>}
+                        {codexHostings.map((hosting) => (
+                          <div key={hosting.id} className="flex items-center justify-between gap-3">
+                            <span className="truncate">{hosting.name || hosting.host}</span>
+                            <span className="shrink-0 font-mono text-[10px] uppercase">{hosting.protocol}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                     <div className="flex justify-end">
                       <button

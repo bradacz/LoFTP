@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/sonner";
-import { ftpTestConnection, sftpTestConnection } from "@/lib/tauri";
-import { HostingConfig } from "@/types/ftp";
+import { bunnyStorageTestConnection, ftpTestConnection, sftpTestConnection } from "@/lib/tauri";
+import { HostingConfig, HostingProtocol } from "@/types/ftp";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "@/i18n";
 
@@ -23,9 +23,11 @@ export function HostingDialog({ open, onClose, onSave, editHosting }: HostingDia
   const [port, setPort] = useState("21");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [protocol, setProtocol] = useState<"ftp" | "sftp">("ftp");
+  const [protocol, setProtocol] = useState<HostingProtocol>("ftp");
   const [useTls, setUseTls] = useState(false);
   const [sshKeyPath, setSshKeyPath] = useState("");
+  const [storageZoneName, setStorageZoneName] = useState("");
+  const [pullZoneUrl, setPullZoneUrl] = useState("");
   const [isTesting, setIsTesting] = useState(false);
 
   useEffect(() => {
@@ -35,9 +37,11 @@ export function HostingDialog({ open, onClose, onSave, editHosting }: HostingDia
       setPort(String(editHosting.port));
       setUsername(editHosting.username);
       setPassword(editHosting.password);
-      setProtocol(editHosting.protocol);
+      setProtocol(editHosting.protocol === "ftp" && editHosting.useTls ? "ftps" : editHosting.protocol);
       setUseTls(editHosting.useTls ?? false);
       setSshKeyPath(editHosting.sshKeyPath ?? "");
+      setStorageZoneName(editHosting.storageZoneName ?? editHosting.username);
+      setPullZoneUrl(editHosting.pullZoneUrl ?? "");
     } else {
       setName("");
       setHost("");
@@ -47,38 +51,49 @@ export function HostingDialog({ open, onClose, onSave, editHosting }: HostingDia
       setProtocol("ftp");
       setUseTls(false);
       setSshKeyPath("");
+      setStorageZoneName("");
+      setPullZoneUrl("");
     }
   }, [editHosting, open]);
 
   const handleSave = () => {
-    if (!name || !host || !username) return;
+    if (!canSubmit) return;
+    const isBunny = protocol === "bunnyStorage";
     onSave({
       id: editHosting?.id ?? crypto.randomUUID(),
       name,
-      host,
-      port: parseInt(port) || 21,
-      username,
+      host: isBunny ? (host || "storage.bunnycdn.com") : host,
+      port: isBunny ? 443 : parseInt(port) || defaultPort(protocol),
+      username: isBunny ? storageZoneName : username,
       password,
       protocol,
-      useTls: protocol === "ftp" ? useTls : undefined,
+      useTls: protocol === "ftps" ? true : protocol === "ftp" ? useTls : undefined,
       sshKeyPath: protocol === "sftp" && sshKeyPath ? sshKeyPath : undefined,
+      storageZoneName: isBunny ? storageZoneName : undefined,
+      pullZoneUrl: isBunny && pullZoneUrl ? pullZoneUrl : undefined,
     });
     onClose();
   };
 
-  const canSubmit = !!name && !!host && !!username;
-  const canTest = !!host && !!username;
+  const canSubmit = protocol === "bunnyStorage"
+    ? !!name && !!storageZoneName && !!password
+    : !!name && !!host && !!username;
+  const canTest = protocol === "bunnyStorage"
+    ? !!storageZoneName && !!password
+    : !!host && !!username;
 
   const handleTestConnection = async () => {
     if (!canTest) return;
 
     setIsTesting(true);
     try {
-      const parsedPort = parseInt(port) || (protocol === "sftp" ? 22 : 21);
-      if (protocol === "sftp") {
+      const parsedPort = parseInt(port) || defaultPort(protocol);
+      if (protocol === "bunnyStorage") {
+        await bunnyStorageTestConnection(host || "storage.bunnycdn.com", storageZoneName, password);
+      } else if (protocol === "sftp") {
         await sftpTestConnection(host, parsedPort, username, password, sshKeyPath || undefined);
       } else {
-        await ftpTestConnection(host, parsedPort, username, password, useTls);
+        await ftpTestConnection(host, parsedPort, username, password, protocol === "ftps" || useTls);
       }
 
       toast.success(t("hostingDialog.connectionOk"), {
@@ -106,23 +121,31 @@ export function HostingDialog({ open, onClose, onSave, editHosting }: HostingDia
           </div>
           <div className="grid grid-cols-[1fr_80px] gap-2">
             <div className="grid gap-1.5">
-              <Label className="text-xs text-muted-foreground">{t("hostingDialog.host")}</Label>
-              <Input value={host} onChange={(e) => setHost(e.target.value)} placeholder="ftp.example.com" className="h-8 text-sm" />
+              <Label className="text-xs text-muted-foreground">
+                {protocol === "bunnyStorage" ? t("hostingDialog.endpoint") : t("hostingDialog.host")}
+              </Label>
+              <Input
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                placeholder={protocol === "bunnyStorage" ? "storage.bunnycdn.com" : "ftp.example.com"}
+                className="h-8 text-sm"
+              />
             </div>
-            <div className="grid gap-1.5">
+            <div className={`grid gap-1.5 ${protocol === "bunnyStorage" ? "hidden" : ""}`}>
               <Label className="text-xs text-muted-foreground">{t("hostingDialog.port")}</Label>
               <Input value={port} onChange={(e) => setPort(e.target.value)} className="h-8 text-sm" />
             </div>
           </div>
           <div className="grid gap-1.5">
             <Label className="text-xs text-muted-foreground">{t("hostingDialog.protocol")}</Label>
-            <div className="flex gap-2">
-              {(["ftp", "sftp"] as const).map((p) => (
+            <div className="flex flex-wrap gap-2">
+              {(["ftp", "ftps", "sftp", "bunnyStorage"] as const).map((p) => (
                 <button
                   key={p}
                   onClick={() => {
                     setProtocol(p);
-                    setPort(p === "sftp" ? "22" : "21");
+                    setPort(String(defaultPort(p)));
+                    if (p === "bunnyStorage" && !host) setHost("storage.bunnycdn.com");
                   }}
                   className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${
                     protocol === p
@@ -130,19 +153,38 @@ export function HostingDialog({ open, onClose, onSave, editHosting }: HostingDia
                       : "bg-secondary text-secondary-foreground border-border"
                   }`}
                 >
-                  {p.toUpperCase()}
+                  {p === "bunnyStorage" ? "Bunny Storage" : p.toUpperCase()}
                 </button>
               ))}
             </div>
           </div>
-          <div className="grid gap-1.5">
-            <Label className="text-xs text-muted-foreground">{t("hostingDialog.user")}</Label>
-            <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="user" className="h-8 text-sm" />
-          </div>
-          <div className="grid gap-1.5">
-            <Label className="text-xs text-muted-foreground">{t("hostingDialog.password")}</Label>
-            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="h-8 text-sm" />
-          </div>
+          {protocol === "bunnyStorage" ? (
+            <>
+              <div className="grid gap-1.5">
+                <Label className="text-xs text-muted-foreground">{t("hostingDialog.storageZoneName")}</Label>
+                <Input value={storageZoneName} onChange={(e) => setStorageZoneName(e.target.value)} placeholder="my-storage-zone" className="h-8 text-sm" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs text-muted-foreground">{t("hostingDialog.accessKey")}</Label>
+                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="h-8 text-sm" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs text-muted-foreground">{t("hostingDialog.pullZoneUrl")}</Label>
+                <Input value={pullZoneUrl} onChange={(e) => setPullZoneUrl(e.target.value)} placeholder="https://cdn.example.com" className="h-8 text-sm" />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="grid gap-1.5">
+                <Label className="text-xs text-muted-foreground">{t("hostingDialog.user")}</Label>
+                <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="user" className="h-8 text-sm" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs text-muted-foreground">{t("hostingDialog.password")}</Label>
+                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="h-8 text-sm" />
+              </div>
+            </>
+          )}
           {protocol === "ftp" && (
             <div className="flex items-center gap-2">
               <button
@@ -200,4 +242,10 @@ export function HostingDialog({ open, onClose, onSave, editHosting }: HostingDia
       </DialogContent>
     </Dialog>
   );
+}
+
+function defaultPort(protocol: HostingProtocol): number {
+  if (protocol === "sftp") return 22;
+  if (protocol === "bunnyStorage") return 443;
+  return 21;
 }

@@ -1,8 +1,9 @@
 import { useState, useCallback } from "react";
-import { HostingConfig, FileItem } from "@/types/ftp";
+import { HostingConfig, FileItem, HostingProtocol } from "@/types/ftp";
 import {
   ftpConnect, ftpList, ftpDisconnect, ftpMkdir, ftpDelete, ftpRename,
   sftpConnect, sftpList, sftpDisconnect, sftpMkdir, sftpDelete, sftpRename,
+  bunnyStorageConnect, bunnyStorageList, bunnyStorageDisconnect, bunnyStorageMkdir, bunnyStorageDelete, bunnyStorageRename,
 } from "@/lib/tauri";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
@@ -25,7 +26,11 @@ export function useConnection() {
     setTransportStatuses((prev) => ({ ...prev, [id]: status }));
   };
 
-  const disconnectTransport = useCallback(async (hostingId: string, protocol: "ftp" | "sftp") => {
+  const disconnectTransport = useCallback(async (hostingId: string, protocol: HostingProtocol) => {
+    if (protocol === "bunnyStorage") {
+      await bunnyStorageDisconnect(hostingId);
+      return;
+    }
     if (protocol === "sftp") {
       await sftpDisconnect(hostingId);
       return;
@@ -37,10 +42,17 @@ export function useConnection() {
     setStatus(config.id, "connecting");
     setTransportStatus(config.id, "connecting");
     try {
-      if (config.protocol === "sftp") {
+      if (config.protocol === "bunnyStorage") {
+        await bunnyStorageConnect(
+          config.id,
+          config.host || "storage.bunnycdn.com",
+          config.storageZoneName || config.username,
+          config.password,
+        );
+      } else if (config.protocol === "sftp") {
         await sftpConnect(config.id, config.host, config.port, config.username, config.password, config.sshKeyPath);
       } else {
-        await ftpConnect(config.id, config.host, config.port, config.username, config.password, config.useTls);
+        await ftpConnect(config.id, config.host, config.port, config.username, config.password, config.protocol === "ftps" || config.useTls);
       }
       setTransportStatus(config.id, "connected");
     } catch (e) {
@@ -57,7 +69,7 @@ export function useConnection() {
     setStatus(hostingId, "error", error);
   }, []);
 
-  const disconnect = useCallback(async (hostingId: string, protocol: "ftp" | "sftp") => {
+  const disconnect = useCallback(async (hostingId: string, protocol: HostingProtocol) => {
     try {
       await disconnectTransport(hostingId, protocol);
     } finally {
@@ -65,8 +77,11 @@ export function useConnection() {
     }
   }, [disconnectTransport]);
 
-  const listRemote = useCallback(async (hostingId: string, path: string, protocol: "ftp" | "sftp"): Promise<FileItem[]> => {
+  const listRemote = useCallback(async (hostingId: string, path: string, protocol: HostingProtocol): Promise<FileItem[]> => {
     try {
+      if (protocol === "bunnyStorage") {
+        return await bunnyStorageList(hostingId, path);
+      }
       if (protocol === "sftp") {
         return await sftpList(hostingId, path);
       }
@@ -82,17 +97,20 @@ export function useConnection() {
     }
   }, [disconnectTransport]);
 
-  const mkdirRemote = useCallback(async (hostingId: string, path: string, protocol: "ftp" | "sftp") => {
+  const mkdirRemote = useCallback(async (hostingId: string, path: string, protocol: HostingProtocol) => {
+    if (protocol === "bunnyStorage") return bunnyStorageMkdir(hostingId, path);
     if (protocol === "sftp") return sftpMkdir(hostingId, path);
     return ftpMkdir(hostingId, path);
   }, []);
 
-  const deleteRemote = useCallback(async (hostingId: string, path: string, isDir: boolean, protocol: "ftp" | "sftp") => {
+  const deleteRemote = useCallback(async (hostingId: string, path: string, isDir: boolean, protocol: HostingProtocol) => {
+    if (protocol === "bunnyStorage") return bunnyStorageDelete(hostingId, path, isDir);
     if (protocol === "sftp") return sftpDelete(hostingId, path, isDir);
     return ftpDelete(hostingId, path, isDir);
   }, []);
 
-  const renameRemote = useCallback(async (hostingId: string, from: string, to: string, protocol: "ftp" | "sftp") => {
+  const renameRemote = useCallback(async (hostingId: string, from: string, to: string, protocol: HostingProtocol) => {
+    if (protocol === "bunnyStorage") return bunnyStorageRename(hostingId, from, to);
     if (protocol === "sftp") return sftpRename(hostingId, from, to);
     return ftpRename(hostingId, from, to);
   }, []);

@@ -8,6 +8,7 @@ import {
   RiFileZipFill,
   RiFolderAddFill,
   RiInformation2Fill,
+  RiMenuLine,
   RiPlug2Line,
   RiRefreshLine,
   RiSearch2Line,
@@ -15,10 +16,39 @@ import {
   RiUploadCloud2Fill,
 } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
+import { cn } from "@/lib/utils";
+
+export interface ToolbarMenuItem {
+  id: string;
+  label: string;
+  onSelect: () => void;
+  disabled?: boolean;
+  shortcut?: string;
+  danger?: boolean;
+}
+
+export interface ToolbarMenuGroup {
+  id: string;
+  label: string;
+  items: ToolbarMenuItem[];
+}
 
 interface ToolbarProps {
+  menuGroups: ToolbarMenuGroup[];
   onNewHosting: () => void;
   onRefresh: () => void;
   onDisconnect: () => void;
@@ -42,6 +72,7 @@ interface ToolbarProps {
 const toolbarIconClassName = "h-4 w-4";
 
 export function Toolbar({
+  menuGroups,
   onNewHosting,
   onRefresh,
   onDisconnect,
@@ -66,6 +97,7 @@ export function Toolbar({
   return (
     <div className="flex items-center gap-1 px-2 py-1.5 bg-toolbar border-b border-toolbar-border">
       <ToolbarIconButton icon={<RiAddLine className={toolbarIconClassName} />} label={t("toolbar.newConnection")} onClick={onNewHosting} variant="outline" />
+      <ToolbarMenuButton groups={menuGroups} label={t("toolbar.menu")} />
       <ToolbarIconButton icon={<RiRefreshLine className={toolbarIconClassName} />} label={t("toolbar.refresh")} onClick={onRefresh} />
       <ToolbarIconButton
         icon={<RiPlug2Line className={toolbarIconClassName} />}
@@ -121,6 +153,56 @@ export function Toolbar({
       <ToolbarIconButton icon={<RiSettings3Fill className={toolbarIconClassName} />} label={t("toolbar.settings")} onClick={onSettings} />
       <ToolbarIconButton icon={<RiInformation2Fill className={toolbarIconClassName} />} label={t("toolbar.about")} onClick={onAbout} />
     </div>
+  );
+}
+
+function ToolbarMenuButton({ groups, label }: { groups: ToolbarMenuGroup[]; label: string }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
+          aria-label={label}
+          title={label}
+        >
+          <RiMenuLine className={toolbarIconClassName} />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={6} className="w-64">
+        <DropdownMenuLabel className="text-xs uppercase tracking-wide text-muted-foreground">
+          {label}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {groups.map((group, index) => (
+          <div key={group.id}>
+            {index > 0 && <DropdownMenuSeparator />}
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="text-xs font-medium">
+                {group.label}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-72">
+                {group.items.map((item) => (
+                  <DropdownMenuItem
+                    key={item.id}
+                    disabled={item.disabled}
+                    onSelect={() => item.onSelect()}
+                    className={cn(
+                      "text-xs",
+                      item.danger && "text-destructive focus:text-destructive"
+                    )}
+                  >
+                    <span className="truncate">{item.label}</span>
+                    {item.shortcut && <DropdownMenuShortcut>{item.shortcut}</DropdownMenuShortcut>}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          </div>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

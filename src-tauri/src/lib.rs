@@ -2,6 +2,8 @@ mod commands;
 mod models;
 mod services;
 
+use commands::bunny_storage::BunnyStorageState;
+use commands::codex::CodexBridgeState;
 use commands::ftp::FtpState;
 use commands::sftp::SftpState;
 use commands::updater::PendingUpdateState;
@@ -14,9 +16,15 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(FtpState::new())
+        .manage(BunnyStorageState::new())
+        .manage(CodexBridgeState::new())
         .manage(SftpState::new())
         .manage(PendingUpdateState::new())
         .manage(CancellationState::new())
+        .setup(|app| {
+            commands::codex::codex_start_bridge_from_saved_settings(app.handle().clone());
+            Ok(())
+        })
         .on_menu_event(|app, event| {
             commands::ui::handle_menu_event(app, event.id().as_ref());
         })
@@ -50,6 +58,18 @@ pub fn run() {
             commands::ftp::ftp_rename,
             commands::ftp::ftp_disconnect,
             commands::ftp::cancel_transfer,
+            // Bunny Storage
+            commands::bunny_storage::bunny_storage_connect,
+            commands::bunny_storage::bunny_storage_test_connection,
+            commands::bunny_storage::bunny_storage_list,
+            commands::bunny_storage::bunny_storage_upload,
+            commands::bunny_storage::bunny_storage_download,
+            commands::bunny_storage::bunny_storage_upload_dir,
+            commands::bunny_storage::bunny_storage_download_dir,
+            commands::bunny_storage::bunny_storage_mkdir,
+            commands::bunny_storage::bunny_storage_delete,
+            commands::bunny_storage::bunny_storage_rename,
+            commands::bunny_storage::bunny_storage_disconnect,
             // SFTP
             commands::sftp::sftp_connect,
             commands::sftp::sftp_test_connection,

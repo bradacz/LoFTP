@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { HostingConfig, FileItem } from "@/types/ftp";
+import type { HostingConfig, FileItem, HostingProtocol } from "@/types/ftp";
 import type { NativeContextMenuPayload } from "@/types/contextMenu";
 import type { LicenseStatus, PurchaseCheckout } from "@/types/license";
 import type { AvailableUpdate, UpdaterStatus } from "@/types/updater";
@@ -142,6 +142,52 @@ export async function ftpDisconnect(hostingId: string): Promise<void> {
 
 export async function cancelTransfer(transferId: string): Promise<boolean> {
   return invoke("cancel_transfer", { transferId });
+}
+
+// --- Bunny Storage ---
+
+export async function bunnyStorageConnect(hostingId: string, endpoint: string, storageZoneName: string, accessKey: string): Promise<void> {
+  return invoke("bunny_storage_connect", { hostingId, endpoint, storageZoneName, accessKey });
+}
+
+export async function bunnyStorageTestConnection(endpoint: string, storageZoneName: string, accessKey: string): Promise<void> {
+  return invoke("bunny_storage_test_connection", { endpoint, storageZoneName, accessKey });
+}
+
+export async function bunnyStorageList(hostingId: string, path: string): Promise<FileItem[]> {
+  return invoke("bunny_storage_list", { hostingId, path });
+}
+
+export async function bunnyStorageUpload(hostingId: string, localPath: string, remotePath: string, transferId: string, options?: TransferOptionsPayload): Promise<void> {
+  return invoke("bunny_storage_upload", { hostingId, localPath, remotePath, transferId, options: options ?? null });
+}
+
+export async function bunnyStorageDownload(hostingId: string, remotePath: string, localPath: string, transferId: string, options?: TransferOptionsPayload): Promise<void> {
+  return invoke("bunny_storage_download", { hostingId, remotePath, localPath, transferId, options: options ?? null });
+}
+
+export async function bunnyStorageUploadDir(hostingId: string, localDir: string, remoteDir: string, transferId: string, options?: TransferOptionsPayload): Promise<void> {
+  return invoke("bunny_storage_upload_dir", { hostingId, localDir, remoteDir, transferId, options: options ?? null });
+}
+
+export async function bunnyStorageDownloadDir(hostingId: string, remoteDir: string, localDir: string, transferId: string, options?: TransferOptionsPayload): Promise<void> {
+  return invoke("bunny_storage_download_dir", { hostingId, remoteDir, localDir, transferId, options: options ?? null });
+}
+
+export async function bunnyStorageMkdir(hostingId: string, path: string): Promise<void> {
+  return invoke("bunny_storage_mkdir", { hostingId, path });
+}
+
+export async function bunnyStorageDelete(hostingId: string, path: string, isDir: boolean): Promise<void> {
+  return invoke("bunny_storage_delete", { hostingId, path, isDir });
+}
+
+export async function bunnyStorageRename(hostingId: string, from: string, to: string): Promise<void> {
+  return invoke("bunny_storage_rename", { hostingId, from, to });
+}
+
+export async function bunnyStorageDisconnect(hostingId: string): Promise<void> {
+  return invoke("bunny_storage_disconnect", { hostingId });
 }
 
 // --- SFTP ---
@@ -369,6 +415,8 @@ export async function aiRunPrompt(task: string, content: string): Promise<AiProm
 export interface CodexBridgeSettings {
   enabled: boolean;
   port: number;
+  running?: boolean;
+  sessionToken?: string | null;
 }
 
 export interface CodexHostingSummary {
@@ -376,8 +424,10 @@ export interface CodexHostingSummary {
   name: string;
   host: string;
   port: number;
-  protocol: string;
+  protocol: HostingProtocol;
   username: string;
+  storageZoneName?: string | null;
+  pullZoneUrl?: string | null;
 }
 
 export async function codexGetBridgeSettings(): Promise<CodexBridgeSettings> {

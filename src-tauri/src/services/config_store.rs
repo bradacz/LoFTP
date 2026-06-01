@@ -56,6 +56,8 @@ pub fn load_hostings() -> Vec<HostingConfig> {
                         protocol: stored.protocol,
                         use_tls: stored.use_tls,
                         ssh_key_path: stored.ssh_key_path,
+                        storage_zone_name: stored.storage_zone_name,
+                        pull_zone_url: stored.pull_zone_url,
                     })
                     .collect();
 
@@ -82,6 +84,8 @@ pub fn save_hostings(hostings: &[HostingConfig]) -> Result<(), String> {
             protocol: hosting.protocol.clone(),
             use_tls: hosting.use_tls,
             ssh_key_path: hosting.ssh_key_path.clone(),
+            storage_zone_name: hosting.storage_zone_name.clone(),
+            pull_zone_url: hosting.pull_zone_url.clone(),
         })
         .collect();
     let data = serde_json::to_string_pretty(&stored).map_err(|e| e.to_string())?;

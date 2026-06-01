@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { HostingConfig } from "@/types/ftp";
+import { HostingConfig, HostingProtocol } from "@/types/ftp";
 import { toast } from "@/components/ui/sonner";
 import { useI18n } from "@/i18n";
 
@@ -9,7 +9,7 @@ interface ConnectionLike {
   connect: (config: HostingConfig) => Promise<void>;
   markConnected: (hostingId: string) => void;
   markError: (hostingId: string, error: string) => void;
-  disconnect: (hostingId: string, protocol: "ftp" | "sftp") => Promise<void>;
+  disconnect: (hostingId: string, protocol: HostingProtocol) => Promise<void>;
   getStatus: (id: string) => ConnectionStatus;
 }
 

@@ -14,6 +14,10 @@ pub struct HostingConfig {
     pub use_tls: bool,
     #[serde(default)]
     pub ssh_key_path: Option<String>,
+    #[serde(default)]
+    pub storage_zone_name: Option<String>,
+    #[serde(default)]
+    pub pull_zone_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,11 +33,17 @@ pub struct StoredHostingConfig {
     pub use_tls: bool,
     #[serde(default)]
     pub ssh_key_path: Option<String>,
+    #[serde(default)]
+    pub storage_zone_name: Option<String>,
+    #[serde(default)]
+    pub pull_zone_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum Protocol {
     Ftp,
+    Ftps,
     Sftp,
+    BunnyStorage,
 }

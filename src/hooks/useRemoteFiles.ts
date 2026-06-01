@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
-import { FileItem, HostingConfig } from "@/types/ftp";
+import { FileItem, HostingConfig, HostingProtocol } from "@/types/ftp";
 
 interface RemoteConnectionLike {
-  listRemote: (hostingId: string, path: string, protocol: "ftp" | "sftp") => Promise<FileItem[]>;
+  listRemote: (hostingId: string, path: string, protocol: HostingProtocol) => Promise<FileItem[]>;
   getStatus: (hostingId: string) => "disconnected" | "connecting" | "connected" | "error";
 }
 

@@ -100,6 +100,14 @@ export interface Messages {
     integrationCodexBridge: string;
   };
   toolbar: {
+    menu: string;
+    menuConnection: string;
+    menuTransfers: string;
+    menuFile: string;
+    menuSelection: string;
+    menuArchives: string;
+    menuTools: string;
+    menuApplication: string;
     newConnection: string;
     refresh: string;
     disconnect: string;
@@ -141,6 +149,10 @@ export interface Messages {
     protocol: string;
     user: string;
     password: string;
+    endpoint: string;
+    storageZoneName: string;
+    accessKey: string;
+    pullZoneUrl: string;
     ftps: string;
     sshKey: string;
     chooseKey: string;
@@ -743,6 +755,14 @@ function createMessages(nativeName: string): Messages {
       integrationCodexBridge: "Codex through local bridge",
     },
     toolbar: {
+      menu: "Menu",
+      menuConnection: "Connection",
+      menuTransfers: "Transfers",
+      menuFile: "File",
+      menuSelection: "Selection",
+      menuArchives: "Archives",
+      menuTools: "Tools",
+      menuApplication: "Application",
       newConnection: "New connection",
       refresh: "Refresh",
       disconnect: "Disconnect",
@@ -784,6 +804,10 @@ function createMessages(nativeName: string): Messages {
       protocol: "Protocol",
       user: "User",
       password: "Password",
+      endpoint: "Endpoint",
+      storageZoneName: "Storage zone name",
+      accessKey: "Access key / zone password",
+      pullZoneUrl: "Pull zone URL (optional)",
       ftps: "FTPS (TLS/SSL)",
       sshKey: "SSH key (optional)",
       chooseKey: "Choose",
@@ -1197,6 +1221,14 @@ export const messages: Record<Locale, Messages> = {
       integrationCodexBridge: "Codex přes lokální bridge",
     },
     toolbar: {
+      menu: "Menu",
+      menuConnection: "Připojení",
+      menuTransfers: "Přenosy",
+      menuFile: "Soubor",
+      menuSelection: "Výběr",
+      menuArchives: "Archivy",
+      menuTools: "Nástroje",
+      menuApplication: "Aplikace",
       newConnection: "Nové připojení",
       refresh: "Přenačíst",
       disconnect: "Odpojit",
@@ -1238,6 +1270,10 @@ export const messages: Record<Locale, Messages> = {
       protocol: "Protokol",
       user: "Uživatel",
       password: "Heslo",
+      endpoint: "Endpoint",
+      storageZoneName: "Název Storage Zone",
+      accessKey: "Access key / heslo zóny",
+      pullZoneUrl: "Pull zone URL (volitelné)",
       ftps: "FTPS (TLS/SSL)",
       sshKey: "SSH klíč (volitelné)",
       chooseKey: "Vybrat",
@@ -1616,7 +1652,7 @@ export const messages: Record<Locale, Messages> = {
     settings: { title: "Einstellungen", license: "Lizenz", fullVersionActivated: "Vollversion aktiviert", activate: "Aktivieren", deactivateLicense: "Lizenz deaktivieren", licenseExpired: "Lizenz abgelaufen", licenseRevoked: "Lizenz widerrufen", licenseLimitExceeded: "Gerätelimit überschritten", licenseInvalid: "Ungültige Lizenz", licenseExpiredDesc: "Ihre Aktivierung ist abgelaufen. Die App funktioniert weiter, aber der Hinweis auf die Projektunterstützung bleibt sichtbar.", licenseRevokedDesc: "Ihre Lizenz wurde widerrufen. Kontaktieren Sie den Support.", licenseLimitExceededDesc: "Die maximale Anzahl an Geräten für diese Aktivierung wurde erreicht. Deaktivieren Sie ein anderes Gerät oder verwenden Sie eine andere Aktivierung.", appearance: "Darstellung", language: "Sprache", tabGeneral: "Allgemein", tabAi: "AI", contextMenu: "Kontextmenü", contextMenuDesc: "Wählen Sie, welche Elemente im Rechtsklick-Menü angezeigt werden", contextMenuOpen: "Öffnen", contextMenuClipboard: "Zwischenablage", contextMenuSelection: "Auswahl", contextMenuFileOps: "Dateioperationen", contextMenuArchive: "Archive", contextMenuProps: "Eigenschaften und Attribute", contextMenuAdvanced: "Erweitert", contextMenuDestructive: "Löschen", contextMenuResetAll: "Alles zurücksetzen", ai: "AI", aiEnable: "AI-Ebene aktivieren", aiEnableDesc: "Bereitet LoFTP auf AI-gestützte Workflows, Modellrouting und Provider-Konfiguration vor.", aiOn: "An", aiOff: "Aus", aiResetSection: "AI-Einstellungen zurücksetzen", aiResetDesc: "Stellt die Standard-Provider-Presets und Richtlinienwerte für dieses Gerät wieder her.", aiReset: "AI zurücksetzen", aiProviders: "Provider", aiApiKey: "API key", aiApiKeyConfigured: "Stored securely in the system keychain.", aiApiKeyMissing: "No API key is stored for this provider.", aiApiKeyPlaceholder: "Paste API key", aiRemoveSecret: "Remove", aiConfigured: "Configured", aiMissing: "Missing" },
     toolbar: { newConnection: "Neue Verbindung", refresh: "Neu laden", disconnect: "Trennen", upload: "Hochladen", download: "Herunterladen", folder: "Ordner", rename: "Umbenennen", delete: "Löschen", search: "Suchen", compare: "Vergleichen", openArchive: "Archiv öffnen", createArchive: "Archiv erstellen", settings: "Einstellungen", about: "Über die App" },
     about: { version: "Version {version}", description: "Desktop-FTP/SFTP-Client für macOS mit Fokus auf schnelle Datei- und Transferverwaltung.", eula: "Lizenzbedingungen", terms: "Geschäftsbedingungen", privacy: "Datenschutz", updates: "Updates", checking: "Prüfe...", check: "Prüfen", latest: "Neueste Version", updateAvailable: "Verfügbar: v{version}", installing: "Installiere... {percent} %", updateError: "Update-Fehler", notChecked: "Nicht geprüft", updatesNotConfigured: "Updates sind nicht konfiguriert" },
-    hostingDialog: { editTitle: "Hosting bearbeiten", newTitle: "Neues Hosting", name: "Name", namePlaceholder: "Mein Server", host: "Host", port: "Port", protocol: "Protokoll", user: "Benutzer", password: "Passwort", ftps: "FTPS (TLS/SSL)", sshKey: "SSH-Schlüssel (optional)", chooseKey: "Auswählen", chooseKeyTitle: "SSH-Schlüssel auswählen", testConnection: "Verbindung testen", testing: "Teste...", connectionOk: "Verbindung ist in Ordnung", connectionOkDescription: "Anmeldung und Root-Listing waren erfolgreich.", connectionFailed: "Verbindungstest fehlgeschlagen" },
+    hostingDialog: { editTitle: "Hosting bearbeiten", newTitle: "Neues Hosting", name: "Name", namePlaceholder: "Mein Server", host: "Host", port: "Port", protocol: "Protokoll", user: "Benutzer", password: "Passwort", endpoint: "Endpoint", storageZoneName: "Storage-Zone-Name", accessKey: "Access Key / Zonenpasswort", pullZoneUrl: "Pull-Zone-URL (optional)", ftps: "FTPS (TLS/SSL)", sshKey: "SSH-Schlüssel (optional)", chooseKey: "Auswählen", chooseKeyTitle: "SSH-Schlüssel auswählen", testConnection: "Verbindung testen", testing: "Teste...", connectionOk: "Verbindung ist in Ordnung", connectionOkDescription: "Anmeldung und Root-Listing waren erfolgreich.", connectionFailed: "Verbindungstest fehlgeschlagen" },
     driveSelector: { volumes: "Laufwerke", cloud: "Cloud", servers: "Server", quickAccess: "Schnellzugriff", home: "Home-Ordner", desktop: "Schreibtisch", downloads: "Downloads", free: "frei" },
     search: { title: "Dateien suchen", searchIn: "Suchen in:", fileName: "Dateiname (Glob)", containingText: "Text enthält", subfolders: "Unterordner", caseSensitive: "Groß-/Kleinschreibung beachten", search: "Suchen", searching: "Suche...", found: "Gefunden:", results: "Ergebnisse", noResults: "Keine Ergebnisse", aiSearch: "AI-Suche" },
     transferDialog: { uploadTitle: "Dateien hochladen", downloadTitle: "Dateien herunterladen", archiveExtractTitle: "Aus Archiv kopieren", copyTitle: "Dateien kopieren", transferMode: "Transfermodus", auto: "Automatisch", binary: "Binär", overwriteExisting: "Wenn Datei existiert", ask: "Fragen", overwrite: "Überschreiben", overwriteOlder: "Ältere überschreiben", skip: "Überspringen", rename: "Umbenennen", options: "Optionen", resume: "Unterbrochenen Transfer fortsetzen", preserveTimestamps: "Zeitstempel beibehalten", preservePermissions: "Berechtigungen beibehalten", followSymlinks: "Symbolischen Links folgen", createDirs: "Verzeichnisse erstellen", verify: "Nach Transfer prüfen", extract: "Extrahieren", copy: "Kopieren", fileOne: "Datei", fileFew: "Dateien", fileMany: "Dateien", moreFiles: "weitere Dateien", advancedOptions: "Erweiterte Optionen" },

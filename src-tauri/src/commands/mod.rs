@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod archive;
+pub mod bunny_storage;
 pub mod codex;
 pub mod filesystem;
 pub mod ftp;

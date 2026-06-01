@@ -10,7 +10,7 @@ import { AboutDialog } from "@/components/ftp/AboutDialog";
 import { SharewareDialog } from "@/components/ftp/SharewareDialog";
 import { AppTitleBar } from "@/components/ftp/AppTitleBar";
 import { PanelHeaderRow } from "@/components/ftp/PanelHeaderRow";
-import { Toolbar } from "@/components/ftp/Toolbar";
+import { Toolbar, type ToolbarMenuGroup } from "@/components/ftp/Toolbar";
 import { FilePanel } from "@/components/ftp/FilePanel";
 import { useLocalFiles } from "@/hooks/useLocalFiles";
 import { useHostings } from "@/hooks/useHostings";
@@ -917,6 +917,122 @@ const Index = () => {
 
   const canOpenArchive = !!resolveArchivePath(activePanel);
   const canCreateArchive = !!getArchiveSelection(activePanel);
+  const activeSelectedNames = Array.from(activeSel.selected).filter((name) => name !== "..");
+  const activeMenuFile = activeFiles.find((file) => activeSelectedNames.includes(file.name)) ?? null;
+  const activeMenuFallbackFile: FileItem = activeMenuFile ?? {
+    name: "",
+    isDirectory: false,
+    size: 0,
+    modified: "",
+  };
+  const activeMenuHasFile = !!activeMenuFile;
+  const activeMenuHasSelection = activeSelectedNames.length > 0;
+  const activeMenuIsLocal = activePanelData.mode === "local";
+  const activeMenuIsFile = !!activeMenuFile && !activeMenuFile.isDirectory;
+
+  const runMenuContextAction = (action: ContextMenuAction, requiresFile = true) => {
+    if (requiresFile && !activeMenuFile) return;
+    performContextMenuAction(action, activePanel, requiresFile ? activeMenuFile! : activeMenuFallbackFile);
+  };
+
+  const toolbarMenuGroups: ToolbarMenuGroup[] = [
+    {
+      id: "connection",
+      label: t("toolbar.menuConnection"),
+      items: [
+        { id: "newConnection", label: t("toolbar.newConnection"), onSelect: hostingWorkspace.openCreate },
+        { id: "refresh", label: t("toolbar.refresh"), onSelect: fileActions.refresh, shortcut: "F2" },
+        { id: "disconnect", label: t("toolbar.disconnect"), onSelect: hostingWorkspace.disconnect, danger: true },
+      ],
+    },
+    {
+      id: "transfers",
+      label: t("toolbar.menuTransfers"),
+      items: [
+        { id: "upload", label: t("toolbar.upload"), onSelect: transferFlow.copy, disabled: !fileActions.hasSelection },
+        { id: "download", label: t("toolbar.download"), onSelect: transferFlow.copy, disabled: !fileActions.hasSelection },
+        { id: "copy", label: t("functionKeys.copy"), onSelect: transferFlow.copy, disabled: !fileActions.hasSelection, shortcut: "F5" },
+        { id: "move", label: t("functionKeys.move"), onSelect: fileActions.rename, disabled: !fileActions.hasSelection, shortcut: "F6" },
+        { id: "copyTo", label: t("contextMenu.copyTo"), onSelect: () => runMenuContextAction("copyTo"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
+        { id: "moveTo", label: t("contextMenu.moveTo"), onSelect: () => runMenuContextAction("moveTo"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
+        { id: "copyFiles", label: t("contextMenu.copyFiles"), onSelect: () => runMenuContextAction("copyFiles"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
+        { id: "pasteFiles", label: t("contextMenu.pasteFiles"), onSelect: () => runMenuContextAction("pasteFiles", false), disabled: !activeMenuIsLocal },
+      ],
+    },
+    {
+      id: "file",
+      label: t("toolbar.menuFile"),
+      items: [
+        { id: "view", label: t("functionKeys.view"), onSelect: () => setQuickViewOpen((v) => !v), disabled: !activeMenuHasFile, shortcut: "F3" },
+        { id: "edit", label: t("functionKeys.edit"), onSelect: () => setEditorOpen(true), disabled: !activeMenuIsLocal || !activeMenuIsFile, shortcut: "F4" },
+        { id: "openInFinder", label: t("contextMenu.openInFinder"), onSelect: () => runMenuContextAction("openInFinder"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
+        { id: "openInVsCode", label: t("contextMenu.openInVsCode"), onSelect: () => runMenuContextAction("openInVSCode"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
+        { id: "openNatively", label: t("contextMenu.openNatively"), onSelect: () => runMenuContextAction("openNatively"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
+        { id: "openWith", label: t("contextMenu.openWith"), onSelect: () => runMenuContextAction("openWith"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
+        { id: "copyPath", label: t("contextMenu.copyPath"), onSelect: () => runMenuContextAction("copyPath"), disabled: !activeMenuHasFile, shortcut: "Cmd+Shift+C" },
+        { id: "copyName", label: t("contextMenu.copyName"), onSelect: () => runMenuContextAction("copyName"), disabled: !activeMenuHasFile },
+        { id: "copyBaseName", label: t("contextMenu.copyBaseName"), onSelect: () => runMenuContextAction("copyBaseName"), disabled: !activeMenuHasFile },
+        { id: "newFile", label: t("contextMenu.newFile"), onSelect: () => runMenuContextAction("newFile", false), disabled: !activeMenuIsLocal },
+        { id: "newFolder", label: t("contextMenu.newFolder"), onSelect: fileActions.createFolder, shortcut: "F7" },
+        { id: "rename", label: t("contextMenu.rename"), onSelect: fileActions.rename, disabled: !activeMenuHasSelection, shortcut: "F6" },
+        { id: "delete", label: t("contextMenu.delete"), onSelect: fileActions.remove, disabled: !activeMenuHasSelection, shortcut: "F8", danger: true },
+      ],
+    },
+    {
+      id: "selection",
+      label: t("toolbar.menuSelection"),
+      items: [
+        { id: "selectAll", label: t("contextMenu.selectAll"), onSelect: () => runMenuContextAction("selectAll", false) },
+        { id: "deselectAll", label: t("contextMenu.deselectAll"), onSelect: () => runMenuContextAction("deselectAll", false), disabled: !activeMenuHasSelection },
+        { id: "invertSelection", label: t("contextMenu.invertSelection"), onSelect: () => runMenuContextAction("invertSelection", false) },
+        { id: "selectByExtension", label: t("contextMenu.selectByExtension"), onSelect: () => runMenuContextAction("selectByExtension", false), disabled: activeFiles.length === 0 },
+        { id: "selectByPattern", label: t("contextMenu.selectByPattern"), onSelect: () => runMenuContextAction("selectByPattern", false), disabled: activeFiles.length === 0 },
+      ],
+    },
+    {
+      id: "archives",
+      label: t("toolbar.menuArchives"),
+      items: [
+        { id: "openAsArchive", label: t("contextMenu.openAsArchive"), onSelect: () => runMenuContextAction("openAsArchive"), disabled: !canOpenArchive },
+        { id: "openArchive", label: t("contextMenu.openArchive"), onSelect: () => handleOpenArchive(), disabled: !canOpenArchive },
+        { id: "createArchive", label: t("contextMenu.createArchive"), onSelect: () => handleCreateArchiveRequest(), disabled: !canCreateArchive },
+        { id: "extractHere", label: t("contextMenu.extractHere"), onSelect: () => runMenuContextAction("extractHere"), disabled: !activeMenuIsLocal || !canOpenArchive },
+        { id: "extractTo", label: t("contextMenu.extractTo"), onSelect: () => runMenuContextAction("extractTo"), disabled: !activeMenuIsLocal || !canOpenArchive },
+      ],
+    },
+    {
+      id: "tools",
+      label: t("toolbar.menuTools"),
+      items: [
+        { id: "search", label: t("contextMenu.search"), onSelect: () => setSearchOpen(true), shortcut: "Alt+F7" },
+        {
+          id: "compareFolders",
+          label: t("contextMenu.compareFolders"),
+          onSelect: () => {
+            if (dirCompare.isComparing) dirCompare.stop();
+            else dirCompare.compare(leftPanelData.files, rightPanelData.files);
+          },
+        },
+        { id: "properties", label: t("contextMenu.properties"), onSelect: () => runMenuContextAction("properties"), disabled: !activeMenuHasFile },
+        { id: "chmod", label: t("contextMenu.chmod"), onSelect: () => runMenuContextAction("chmod"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
+        { id: "changeDate", label: t("contextMenu.changeDate"), onSelect: () => runMenuContextAction("changeDate"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
+        { id: "calculateChecksum", label: t("contextMenu.calculateChecksum"), onSelect: () => runMenuContextAction("calculateChecksum"), disabled: !activeMenuIsLocal || !activeMenuIsFile },
+        { id: "batchRename", label: t("contextMenu.batchRename"), onSelect: () => runMenuContextAction("batchRename"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
+        { id: "splitFile", label: t("contextMenu.splitFile"), onSelect: () => runMenuContextAction("splitFile"), disabled: !activeMenuIsLocal || !activeMenuIsFile },
+        { id: "combineFiles", label: t("contextMenu.combineFiles"), onSelect: () => runMenuContextAction("combineFiles"), disabled: !activeMenuIsLocal || activeSelectedNames.length <= 1 },
+        { id: "aiExplainFile", label: t("contextMenu.aiExplainFile"), onSelect: () => runMenuContextAction("aiExplainFile"), disabled: !activeMenuIsLocal || !activeMenuIsFile },
+        { id: "codexExplainFile", label: t("contextMenu.codexExplainFile"), onSelect: () => runMenuContextAction("codexExplainFile"), disabled: !activeMenuHasFile },
+      ],
+    },
+    {
+      id: "application",
+      label: t("toolbar.menuApplication"),
+      items: [
+        { id: "settings", label: t("toolbar.settings"), onSelect: () => setSettingsOpen(true) },
+        { id: "about", label: t("toolbar.about"), onSelect: () => setAboutOpen(true) },
+      ],
+    },
+  ];
 
   const archiveCreateDefaultName = (() => {
     if (!archiveCreateRequest || archiveCreateRequest.sourcePaths.length !== 1) {
@@ -1003,6 +1119,7 @@ const Index = () => {
 
       {/* Row 2: Toolbar */}
       <Toolbar
+        menuGroups={toolbarMenuGroups}
         onNewHosting={hostingWorkspace.openCreate}
         onRefresh={fileActions.refresh}
         onDisconnect={hostingWorkspace.disconnect}

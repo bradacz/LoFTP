@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { TransferItem } from "@/types/ftp";
+import type { HostingProtocol } from "@/types/ftp";
 import {
   ftpUpload, ftpDownload, ftpUploadDir, ftpDownloadDir,
   sftpUpload, sftpDownload, sftpUploadDir, sftpDownloadDir,
+  bunnyStorageUpload, bunnyStorageDownload, bunnyStorageUploadDir, bunnyStorageDownloadDir,
   TransferOptionsPayload,
 } from "@/lib/tauri";
 
@@ -107,7 +109,7 @@ export function useTransfers() {
       files: { name: string; localPath: string; isDirectory?: boolean }[],
       remotePath: string,
       hostingId: string,
-      protocol: "ftp" | "sftp",
+      protocol: HostingProtocol,
       options?: TransferOptionsPayload,
     ) => {
       for (const file of files) {
@@ -137,13 +139,17 @@ export function useTransfers() {
         try {
           if (file.isDirectory) {
             // Recursive directory upload
-            if (protocol === "sftp") {
+            if (protocol === "bunnyStorage") {
+              await bunnyStorageUploadDir(hostingId, file.localPath, remoteTarget, transferId, options);
+            } else if (protocol === "sftp") {
               await sftpUploadDir(hostingId, file.localPath, remoteTarget, transferId, options);
             } else {
               await ftpUploadDir(hostingId, file.localPath, remoteTarget, transferId, options);
             }
           } else {
-            if (protocol === "sftp") {
+            if (protocol === "bunnyStorage") {
+              await bunnyStorageUpload(hostingId, file.localPath, remoteTarget, transferId, options);
+            } else if (protocol === "sftp") {
               await sftpUpload(hostingId, file.localPath, remoteTarget, transferId, options);
             } else {
               await ftpUpload(hostingId, file.localPath, remoteTarget, transferId, options);
@@ -164,7 +170,7 @@ export function useTransfers() {
       files: { name: string; remotePath: string; isDirectory?: boolean }[],
       localPath: string,
       hostingId: string,
-      protocol: "ftp" | "sftp",
+      protocol: HostingProtocol,
       options?: TransferOptionsPayload,
     ) => {
       for (const file of files) {
@@ -194,13 +200,17 @@ export function useTransfers() {
         try {
           if (file.isDirectory) {
             // Recursive directory download
-            if (protocol === "sftp") {
+            if (protocol === "bunnyStorage") {
+              await bunnyStorageDownloadDir(hostingId, file.remotePath, localTarget, transferId, options);
+            } else if (protocol === "sftp") {
               await sftpDownloadDir(hostingId, file.remotePath, localTarget, transferId, options);
             } else {
               await ftpDownloadDir(hostingId, file.remotePath, localTarget, transferId, options);
             }
           } else {
-            if (protocol === "sftp") {
+            if (protocol === "bunnyStorage") {
+              await bunnyStorageDownload(hostingId, file.remotePath, localTarget, transferId, options);
+            } else if (protocol === "sftp") {
               await sftpDownload(hostingId, file.remotePath, localTarget, transferId, options);
             } else {
               await ftpDownload(hostingId, file.remotePath, localTarget, transferId, options);

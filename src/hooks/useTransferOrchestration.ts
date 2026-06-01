@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { TransferOptions } from "@/components/ftp/TransferDialog";
 import { archiveExtract, TransferOptionsPayload, fsCopy, fsCopyDir } from "@/lib/tauri";
-import { HostingConfig, FileItem } from "@/types/ftp";
+import { HostingConfig, FileItem, HostingProtocol } from "@/types/ftp";
 
 interface FileResolver {
   resolveActiveItem: (name: string) => FileItem | undefined;
@@ -13,14 +13,14 @@ interface TransferStarter {
     files: { name: string; localPath: string; isDirectory?: boolean }[],
     remotePath: string,
     hostingId: string,
-    protocol: "ftp" | "sftp",
+    protocol: HostingProtocol,
     options?: TransferOptionsPayload,
   ) => Promise<void>;
   startDownload: (
     files: { name: string; remotePath: string; isDirectory?: boolean }[],
     localPath: string,
     hostingId: string,
-    protocol: "ftp" | "sftp",
+    protocol: HostingProtocol,
     options?: TransferOptionsPayload,
   ) => Promise<void>;
 }

@@ -1,15 +1,13 @@
 import { useState, useCallback } from "react";
 import { fsDelete, fsMkdir, fsRename } from "@/lib/tauri";
-import { FileItem, HostingConfig } from "@/types/ftp";
-
-type Protocol = "ftp" | "sftp";
+import { FileItem, HostingConfig, HostingProtocol } from "@/types/ftp";
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
 interface ConnectionLike {
   getStatus: (id: string) => ConnectionStatus;
-  renameRemote: (hostingId: string, from: string, to: string, protocol: Protocol) => Promise<void>;
-  mkdirRemote: (hostingId: string, path: string, protocol: Protocol) => Promise<void>;
-  deleteRemote: (hostingId: string, path: string, isDir: boolean, protocol: Protocol) => Promise<void>;
+  renameRemote: (hostingId: string, from: string, to: string, protocol: HostingProtocol) => Promise<void>;
+  mkdirRemote: (hostingId: string, path: string, protocol: HostingProtocol) => Promise<void>;
+  deleteRemote: (hostingId: string, path: string, isDir: boolean, protocol: HostingProtocol) => Promise<void>;
 }
 
 interface SelectionLike {

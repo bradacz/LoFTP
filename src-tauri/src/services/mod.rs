@@ -1,3 +1,4 @@
+pub mod bunny_storage_client;
 pub mod config_store;
 pub mod credential_store;
 pub mod ftp_client;
