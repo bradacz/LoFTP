@@ -217,7 +217,11 @@ impl BunnyStorageSession {
     }
 
     pub async fn delete(&self, path: &str) -> Result<(), String> {
-        let url = self.url_for(path, false)?;
+        self.delete_path(path, false).await
+    }
+
+    pub async fn delete_path(&self, path: &str, is_dir: bool) -> Result<(), String> {
+        let url = self.url_for(path, is_dir)?;
         let response = self
             .client
             .delete(url)

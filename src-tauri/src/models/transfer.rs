@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -20,34 +20,59 @@ pub struct TransferProgress {
 }
 
 pub struct TransferRegistry {
-    transfers: Mutex<HashMap<String, TransferProgress>>,
+    inner: Mutex<TransferRegistryInner>,
+}
+
+struct TransferRegistryInner {
+    transfers: HashMap<String, TransferProgress>,
+    order: VecDeque<String>,
 }
 
 impl TransferRegistry {
     pub fn new() -> Self {
         Self {
-            transfers: Mutex::new(HashMap::new()),
+            inner: Mutex::new(TransferRegistryInner {
+                transfers: HashMap::new(),
+                order: VecDeque::new(),
+            }),
         }
     }
 
     pub fn record(&self, progress: TransferProgress) {
-        if let Ok(mut transfers) = self.transfers.lock() {
-            transfers.insert(progress.transfer_id.clone(), progress);
+        if let Ok(mut inner) = self.inner.lock() {
+            if !inner.transfers.contains_key(&progress.transfer_id) {
+                inner.order.push_back(progress.transfer_id.clone());
+            }
+            inner
+                .transfers
+                .insert(progress.transfer_id.clone(), progress);
+            while inner.order.len() > MAX_TRANSFER_HISTORY {
+                if let Some(oldest) = inner.order.pop_front() {
+                    inner.transfers.remove(&oldest);
+                }
+            }
         }
     }
 
     pub fn list(&self) -> Vec<TransferProgress> {
-        self.transfers
+        self.inner
             .lock()
-            .map(|transfers| transfers.values().cloned().collect())
+            .map(|inner| {
+                inner
+                    .order
+                    .iter()
+                    .rev()
+                    .filter_map(|id| inner.transfers.get(id).cloned())
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
     pub fn get(&self, transfer_id: &str) -> Option<TransferProgress> {
-        self.transfers
+        self.inner
             .lock()
             .ok()
-            .and_then(|transfers| transfers.get(transfer_id).cloned())
+            .and_then(|inner| inner.transfers.get(transfer_id).cloned())
     }
 }
 
@@ -118,3 +143,4 @@ pub struct TransferOptions {
     pub create_dirs: bool,
     pub verify_after_transfer: bool,
 }
+const MAX_TRANSFER_HISTORY: usize = 1000;

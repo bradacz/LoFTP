@@ -471,9 +471,11 @@ pub async fn bunny_storage_delete(
     state: State<'_, BunnyStorageState>,
     hosting_id: String,
     path: String,
-    _is_dir: bool,
+    is_dir: bool,
 ) -> Result<(), String> {
-    get_session(&state, &hosting_id)?.delete(&path).await
+    get_session(&state, &hosting_id)?
+        .delete_path(&path, is_dir)
+        .await
 }
 
 #[tauri::command]

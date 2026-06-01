@@ -457,6 +457,10 @@ export async function codexExecutePendingPlan(planId: string): Promise<unknown> 
   return invoke("codex_execute_pending_plan", { planId });
 }
 
+export async function codexExecutePendingBuild(requestId: string): Promise<unknown> {
+  return invoke("codex_execute_pending_build", { requestId });
+}
+
 // --- UI ---
 
 export async function uiShowContextMenu(payload: NativeContextMenuPayload): Promise<void> {

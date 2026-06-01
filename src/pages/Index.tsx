@@ -38,6 +38,7 @@ import {
   aiRunPrompt,
   archiveCreate,
   archiveExtract,
+  codexExecutePendingBuild,
   codexExecutePendingPlan,
   codexListHostings,
   codexUpdateActiveContext,
@@ -75,6 +76,12 @@ interface CodexPendingPlanPayload {
     actionCounts?: Record<string, number>;
     rollbackRecommendation?: string;
   };
+}
+
+interface CodexPendingBuildPayload {
+  requestId: string;
+  command: string;
+  workingDir: string;
 }
 
 const Index = () => {
@@ -128,6 +135,7 @@ const Index = () => {
     loading: boolean;
   } | null>(null);
   const [pendingCodexPlanId, setPendingCodexPlanId] = useState<string | null>(null);
+  const [pendingCodexBuildId, setPendingCodexBuildId] = useState<string | null>(null);
   const [codexPlanApproving, setCodexPlanApproving] = useState(false);
 
   const leftSelection = useFileSelection();
@@ -392,6 +400,30 @@ const Index = () => {
       setAssistantResult({
         type: "codex",
         title: "Codex plan failed",
+        body: String(error),
+        loading: false,
+      });
+    } finally {
+      setCodexPlanApproving(false);
+    }
+  };
+
+  const approvePendingCodexBuild = async () => {
+    if (!pendingCodexBuildId) return;
+    setCodexPlanApproving(true);
+    try {
+      const result = await codexExecutePendingBuild(pendingCodexBuildId);
+      setPendingCodexBuildId(null);
+      setAssistantResult({
+        type: "codex",
+        title: "Codex build executed",
+        body: JSON.stringify(result, null, 2),
+        loading: false,
+      });
+    } catch (error) {
+      setAssistantResult({
+        type: "codex",
+        title: "Codex build failed",
         body: String(error),
         loading: false,
       });
@@ -790,6 +822,7 @@ const Index = () => {
   useEffect(() => {
     let unlistenContextMenu: (() => void) | undefined;
     let unlistenCodexPlan: (() => void) | undefined;
+    let unlistenCodexBuild: (() => void) | undefined;
 
     listen<ContextMenuActionPayload>("loftp-context-menu-action", (event) => {
       contextActionHandlerRef.current(event.payload);
@@ -802,6 +835,7 @@ const Index = () => {
     listen<CodexPendingPlanPayload>("loftp-codex-plan-pending", (event) => {
       const report = event.payload.report ?? {};
       setPendingCodexPlanId(event.payload.planId);
+      setPendingCodexBuildId(null);
       setAssistantResult({
         type: "codex",
         title: "Codex plan requires confirmation",
@@ -829,9 +863,31 @@ const Index = () => {
       })
       .catch(() => {});
 
+    listen<CodexPendingBuildPayload>("loftp-codex-build-pending", (event) => {
+      setPendingCodexPlanId(null);
+      setPendingCodexBuildId(event.payload.requestId);
+      setAssistantResult({
+        type: "codex",
+        title: "Codex build requires confirmation",
+        body: [
+          `Request ID: ${event.payload.requestId}`,
+          `Command: ${event.payload.command}`,
+          `Working dir: ${event.payload.workingDir}`,
+          "",
+          "The command will run locally only after this LoFTP confirmation.",
+        ].join("\n"),
+        loading: false,
+      });
+    })
+      .then((nextUnlisten) => {
+        unlistenCodexBuild = nextUnlisten;
+      })
+      .catch(() => {});
+
     return () => {
       unlistenContextMenu?.();
       unlistenCodexPlan?.();
+      unlistenCodexBuild?.();
     };
   }, []);
 
@@ -1458,12 +1514,13 @@ const Index = () => {
         title={assistantResult?.title ?? ""}
         body={assistantResult?.body ?? ""}
         loading={assistantResult?.loading}
-        actionLabel={pendingCodexPlanId ? "Confirm plan" : undefined}
+        actionLabel={pendingCodexPlanId ? "Confirm plan" : pendingCodexBuildId ? "Run build" : undefined}
         actionDisabled={codexPlanApproving}
-        onAction={pendingCodexPlanId ? approvePendingCodexPlan : undefined}
+        onAction={pendingCodexPlanId ? approvePendingCodexPlan : pendingCodexBuildId ? approvePendingCodexBuild : undefined}
         onClose={() => {
           setAssistantResult(null);
           setPendingCodexPlanId(null);
+          setPendingCodexBuildId(null);
         }}
       />
 
