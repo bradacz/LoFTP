@@ -94,6 +94,14 @@ export interface Messages {
     codexBridgeEnable: string;
     codexBridgePort: string;
     codexBridgeHint: string;
+    codexConnector: string;
+    codexConnectorDesc: string;
+    codexConnectorInstall: string;
+    codexConnectorInstalled: string;
+    codexConnectorReady: string;
+    codexConnectorMissing: string;
+    codexConnectorBridge: string;
+    codexConnectorPath: string;
     licenseTransfer: string;
     activationFailed: string;
     integrationAiApi: string;
@@ -749,6 +757,14 @@ function createMessages(nativeName: string): Messages {
       codexBridgeEnable: "Enable local Codex bridge",
       codexBridgePort: "Localhost port",
       codexBridgeHint: "Codex uses saved FTP/SFTP profiles through LoFTP. Passwords and API keys are not returned to the conversation.",
+      codexConnector: "Bundled Codex connector",
+      codexConnectorDesc: "Install or repair the connector included with LoFTP. It configures Codex without manual token copying.",
+      codexConnectorInstall: "Install / repair connector",
+      codexConnectorInstalled: "Codex connector is installed.",
+      codexConnectorReady: "Installed",
+      codexConnectorMissing: "Not installed",
+      codexConnectorBridge: "Bridge",
+      codexConnectorPath: "Plugin path",
       licenseTransfer: "Transfer license to this computer",
       activationFailed: "Activation failed.",
       integrationAiApi: "AI through user API",
@@ -1215,6 +1231,14 @@ export const messages: Record<Locale, Messages> = {
       codexBridgeEnable: "Zapnout lokální Codex bridge",
       codexBridgePort: "Localhost port",
       codexBridgeHint: "Codex používá uložené FTP/SFTP profily přes LoFTP. Hesla a API klíče se nevrací do konverzace.",
+      codexConnector: "Přibalený Codex connector",
+      codexConnectorDesc: "Nainstaluje nebo opraví connector dodaný s LoFTP. Codex se nastaví bez ručního kopírování tokenu.",
+      codexConnectorInstall: "Nainstalovat / opravit connector",
+      codexConnectorInstalled: "Codex connector je nainstalovaný.",
+      codexConnectorReady: "Nainstalováno",
+      codexConnectorMissing: "Nenainstalováno",
+      codexConnectorBridge: "Bridge",
+      codexConnectorPath: "Cesta pluginu",
       licenseTransfer: "Převést licenci na tento počítač",
       activationFailed: "Aktivace se nepodařila.",
       integrationAiApi: "AI přes uživatelské API",

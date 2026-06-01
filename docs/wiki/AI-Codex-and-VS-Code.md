@@ -27,15 +27,18 @@ These workflows are intended to help with:
 - spotting risky changes
 - reviewing transfer intent before action
 
-## Planned API / Add-On Direction
+## Bundled Codex Connector
 
-The next logical step is a local control API or Codex add-on layer that would let Codex work with saved LoFTP hostings without exposing credentials in chat.
+LoFTP includes a bundled Codex Connector that can be installed from `Settings -> Codex`.
 
-Intended direction:
+The connector lets Codex work with saved LoFTP hostings without exposing credentials in chat.
+
+Design:
 
 - LoFTP stores credentials and connection state
 - Codex works through safe local tools
 - secrets do not need to be pasted into conversations
+- write actions require confirmation in the LoFTP UI
 
 ## VS Code Integration
 

@@ -1,0 +1,45 @@
+{
+  "name": "loftp-codex-connector",
+  "version": "0.1.0",
+  "description": "Connect Codex to the local LoFTP bridge without exposing saved FTP, SFTP, or Bunny credentials.",
+  "author": {
+    "name": "Bradacz",
+    "email": "info@mylocalio.com",
+    "url": "https://www.loftp.space"
+  },
+  "homepage": "https://www.loftp.space",
+  "repository": "https://github.com/bradacz/LoFTP",
+  "license": "MIT",
+  "keywords": [
+    "loftp",
+    "codex",
+    "ftp",
+    "sftp",
+    "bunny",
+    "file-manager"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "LoFTP Connector",
+    "shortDescription": "Use saved LoFTP profiles from Codex through a local bridge.",
+    "longDescription": "LoFTP Connector lets Codex inspect saved LoFTP profiles, list files, prepare sync plans, request confirmed transfers, and run approved build commands through LoFTP. Credentials stay inside LoFTP and write actions require LoFTP confirmation.",
+    "developerName": "Bradacz",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://www.loftp.space",
+    "privacyPolicyURL": "https://www.loftp.space",
+    "termsOfServiceURL": "https://www.loftp.space",
+    "defaultPrompt": [
+      "Use LoFTP to review my active server files.",
+      "Prepare a LoFTP sync plan for this project.",
+      "Check LoFTP transfers and explain pending actions."
+    ],
+    "brandColor": "#2563EB",
+    "screenshots": []
+  }
+}

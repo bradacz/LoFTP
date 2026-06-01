@@ -35,6 +35,7 @@ const MAX_SYNC_FILES: usize = 10_000;
 const MAX_SYNC_DEPTH: usize = 24;
 const MAX_BUILD_LOG_BYTES: usize = 256 * 1024;
 const BRIDGE_READ_TIMEOUT: Duration = Duration::from_secs(10);
+const CODEX_CONNECTOR_PLUGIN_NAME: &str = "loftp-codex-connector";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,6 +61,18 @@ pub struct CodexHostingSummary {
     pub storage_zone_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pull_zone_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexConnectorStatus {
+    pub installed: bool,
+    pub configured: bool,
+    pub bridge_running: bool,
+    pub bridge_url: String,
+    pub plugin_path: String,
+    pub marketplace_path: String,
+    pub config_path: String,
 }
 
 pub struct CodexBridgeState {
@@ -167,6 +180,7 @@ impl CodexBridgeState {
         let token = Uuid::new_v4().to_string();
         let task_token = token.clone();
         let (tx, rx) = oneshot::channel();
+        write_connector_config(port, &token)?;
 
         tauri::async_runtime::spawn(async move {
             let listener = match TcpListener::from_std(std_listener) {
@@ -259,6 +273,33 @@ fn settings_path() -> PathBuf {
     app_data_dir().join("codex_bridge.json")
 }
 
+fn connector_config_path() -> PathBuf {
+    app_data_dir().join("codex_connector.json")
+}
+
+fn write_connector_config(port: u16, token: &str) -> Result<PathBuf, String> {
+    let path = connector_config_path();
+    let config = json!({
+        "version": 1,
+        "bridgeUrl": format!("http://127.0.0.1:{}", port),
+        "token": token,
+        "headers": {
+            "x-loftp-token": token
+        }
+    });
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| format!("Write Codex connector config failed: {}", e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+    }
+    Ok(path)
+}
+
 #[tauri::command]
 pub fn codex_get_bridge_settings(state: State<'_, CodexBridgeState>) -> CodexBridgeSettings {
     let mut settings = fs::read_to_string(settings_path())
@@ -308,6 +349,65 @@ pub fn codex_save_bridge_settings(
     }
 
     Ok(sanitized)
+}
+
+#[tauri::command]
+pub fn codex_get_connector_status(
+    state: State<'_, CodexBridgeState>,
+) -> Result<CodexConnectorStatus, String> {
+    let settings = load_bridge_settings();
+    let (running, runtime_port, _) = state.snapshot();
+    let port = runtime_port.unwrap_or(if settings.port == 0 {
+        17642
+    } else {
+        settings.port
+    });
+    Ok(connector_status(running, port))
+}
+
+#[tauri::command]
+pub fn codex_install_connector(
+    app: AppHandle,
+    state: State<'_, CodexBridgeState>,
+) -> Result<CodexConnectorStatus, String> {
+    let mut settings = load_bridge_settings();
+    let port = if settings.port == 0 {
+        17642
+    } else {
+        settings.port
+    };
+    let (running, runtime_port, token) = state.snapshot();
+    let (active_port, active_token) = if running {
+        (
+            runtime_port.unwrap_or(port),
+            token.ok_or_else(|| "Codex bridge token is not available".to_string())?,
+        )
+    } else {
+        let token = state.start(app.clone(), port)?;
+        settings.enabled = true;
+        settings.port = port;
+        settings.running = false;
+        settings.session_token = None;
+        fs::write(
+            settings_path(),
+            serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        (port, token)
+    };
+
+    write_connector_config(active_port, &active_token)?;
+    let source = find_bundled_connector_source(&app)?;
+    let home = dirs::home_dir().ok_or_else(|| "Home directory not found".to_string())?;
+    let plugin_path = home.join("plugins").join(CODEX_CONNECTOR_PLUGIN_NAME);
+    let marketplace_path = home
+        .join(".agents")
+        .join("plugins")
+        .join("marketplace.json");
+    copy_connector_plugin(&source, &plugin_path)?;
+    write_installed_mcp_config(&plugin_path)?;
+    update_personal_marketplace(&marketplace_path)?;
+    Ok(connector_status(true, active_port))
 }
 
 #[tauri::command]
@@ -365,15 +465,7 @@ pub async fn codex_execute_pending_build(
 }
 
 pub fn codex_start_bridge_from_saved_settings(app: AppHandle) {
-    let settings = fs::read_to_string(settings_path())
-        .ok()
-        .and_then(|raw| serde_json::from_str::<CodexBridgeSettings>(&raw).ok())
-        .unwrap_or(CodexBridgeSettings {
-            enabled: false,
-            port: 17642,
-            running: false,
-            session_token: None,
-        });
+    let settings = load_bridge_settings();
 
     if settings.enabled {
         let state = app.state::<CodexBridgeState>();
@@ -384,6 +476,199 @@ pub fn codex_start_bridge_from_saved_settings(app: AppHandle) {
         };
         let _ = state.start(app.clone(), port);
     }
+}
+
+fn load_bridge_settings() -> CodexBridgeSettings {
+    fs::read_to_string(settings_path())
+        .ok()
+        .and_then(|raw| serde_json::from_str::<CodexBridgeSettings>(&raw).ok())
+        .unwrap_or(CodexBridgeSettings {
+            enabled: false,
+            port: 17642,
+            running: false,
+            session_token: None,
+        })
+}
+
+fn connector_status(bridge_running: bool, port: u16) -> CodexConnectorStatus {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let plugin_path = home.join("plugins").join(CODEX_CONNECTOR_PLUGIN_NAME);
+    let marketplace_path = home
+        .join(".agents")
+        .join("plugins")
+        .join("marketplace.json");
+    let config_path = connector_config_path();
+    let installed = plugin_path
+        .join(".codex-plugin")
+        .join("plugin.json")
+        .is_file()
+        && marketplace_contains_connector(&marketplace_path);
+    let configured = config_path.is_file();
+    CodexConnectorStatus {
+        installed,
+        configured,
+        bridge_running,
+        bridge_url: format!("http://127.0.0.1:{}", port),
+        plugin_path: plugin_path.to_string_lossy().to_string(),
+        marketplace_path: marketplace_path.to_string_lossy().to_string(),
+        config_path: config_path.to_string_lossy().to_string(),
+    }
+}
+
+fn marketplace_contains_connector(path: &Path) -> bool {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|value| value.get("plugins").cloned())
+        .and_then(|plugins| plugins.as_array().cloned())
+        .map(|plugins| {
+            plugins.iter().any(|plugin| {
+                plugin
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|name| name == CODEX_CONNECTOR_PLUGIN_NAME)
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn find_bundled_connector_source(app: &AppHandle) -> Result<PathBuf, String> {
+    let mut candidates = Vec::new();
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(
+            resource_dir
+                .join("codex-plugin")
+                .join(CODEX_CONNECTOR_PLUGIN_NAME),
+        );
+        candidates.push(resource_dir.join(CODEX_CONNECTOR_PLUGIN_NAME));
+    }
+    if let Ok(current_dir) = std::env::current_dir() {
+        candidates.push(
+            current_dir
+                .join("codex-plugin")
+                .join(CODEX_CONNECTOR_PLUGIN_NAME),
+        );
+        candidates.push(
+            current_dir
+                .join("..")
+                .join("codex-plugin")
+                .join(CODEX_CONNECTOR_PLUGIN_NAME),
+        );
+    }
+
+    candidates
+        .into_iter()
+        .find(|candidate| {
+            candidate
+                .join(".codex-plugin")
+                .join("plugin.json")
+                .is_file()
+        })
+        .ok_or_else(|| "Bundled LoFTP Codex connector was not found".to_string())
+}
+
+fn copy_connector_plugin(source: &Path, destination: &Path) -> Result<(), String> {
+    let home_plugins = dirs::home_dir()
+        .ok_or_else(|| "Home directory not found".to_string())?
+        .join("plugins");
+    if !destination.starts_with(&home_plugins) {
+        return Err("Refusing to overwrite a path outside ~/plugins".to_string());
+    }
+    if destination.exists() {
+        fs::remove_dir_all(destination)
+            .map_err(|e| format!("Remove old Codex connector failed: {}", e))?;
+    }
+    copy_dir_all(source, destination)
+}
+
+fn copy_dir_all(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::create_dir_all(destination).map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(source).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        let target = destination.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_all(&entry.path(), &target)?;
+        } else if file_type.is_file() {
+            fs::copy(entry.path(), &target).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn write_installed_mcp_config(plugin_path: &Path) -> Result<(), String> {
+    let script_path = plugin_path
+        .join("scripts")
+        .join("loftp-mcp-server.mjs")
+        .to_string_lossy()
+        .to_string();
+    let config = json!({
+        "mcpServers": {
+            "loftp": {
+                "command": "node",
+                "args": [script_path]
+            }
+        }
+    });
+    fs::write(
+        plugin_path.join(".mcp.json"),
+        serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn update_personal_marketplace(path: &Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let mut marketplace = fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| {
+            json!({
+                "name": "personal",
+                "interface": { "displayName": "Personal" },
+                "plugins": []
+            })
+        });
+    let object = marketplace
+        .as_object_mut()
+        .ok_or_else(|| "Invalid Codex marketplace file".to_string())?;
+    object
+        .entry("name".to_string())
+        .or_insert_with(|| json!("personal"));
+    object
+        .entry("interface".to_string())
+        .or_insert_with(|| json!({ "displayName": "Personal" }));
+    let plugins = object
+        .entry("plugins".to_string())
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .ok_or_else(|| "Invalid Codex marketplace plugins list".to_string())?;
+    plugins.retain(|plugin| {
+        plugin
+            .get("name")
+            .and_then(Value::as_str)
+            .is_none_or(|name| name != CODEX_CONNECTOR_PLUGIN_NAME)
+    });
+    plugins.push(json!({
+        "name": CODEX_CONNECTOR_PLUGIN_NAME,
+        "source": {
+            "source": "local",
+            "path": format!("./plugins/{}", CODEX_CONNECTOR_PLUGIN_NAME)
+        },
+        "policy": {
+            "installation": "AVAILABLE",
+            "authentication": "ON_INSTALL"
+        },
+        "category": "Developer Tools"
+    }));
+    fs::write(
+        path,
+        serde_json::to_string_pretty(&marketplace).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
 }
 
 async fn run_bridge_server(

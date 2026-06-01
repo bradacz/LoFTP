@@ -26,4 +26,4 @@ Not as a direct in-place remote editing flow. The built-in editor writes local t
 
 ## Does LoFTP work with AI or Codex?
 
-Yes. The project already includes AI-oriented and Codex-oriented workflows inside the application, and a broader local control API direction is planned.
+Yes. The project includes AI-oriented workflows inside the application and a bundled LoFTP Codex Connector that can be installed from `Settings -> Codex`.

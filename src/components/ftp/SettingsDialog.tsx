@@ -19,8 +19,17 @@ import { useLicense } from "@/hooks/useLicense";
 import { useI18n } from "@/i18n";
 import { messages as localeMessages } from "@/i18n/messages";
 import { cn } from "@/lib/utils";
-import { aiGetSettings, aiSaveSettings, aiTestSettings, codexGetBridgeSettings, codexListHostings, codexSaveBridgeSettings } from "@/lib/tauri";
-import type { CodexHostingSummary } from "@/lib/tauri";
+import {
+  aiGetSettings,
+  aiSaveSettings,
+  aiTestSettings,
+  codexGetBridgeSettings,
+  codexGetConnectorStatus,
+  codexInstallConnector,
+  codexListHostings,
+  codexSaveBridgeSettings,
+} from "@/lib/tauri";
+import type { CodexConnectorStatus, CodexHostingSummary } from "@/lib/tauri";
 import { toast } from "@/components/ui/sonner";
 import type { ContextMenuAction, ContextMenuSettings } from "@/types/contextMenu";
 import { DEFAULT_CONTEXT_MENU_SETTINGS, getContextMenuSettings, resetContextMenuSettings, saveContextMenuSettings } from "@/lib/contextMenuSettings";
@@ -70,10 +79,12 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
   const [codexSessionToken, setCodexSessionToken] = useState<string | null>(null);
   const [showCodexSessionToken, setShowCodexSessionToken] = useState(false);
   const [codexHostings, setCodexHostings] = useState<CodexHostingSummary[]>([]);
+  const [codexConnectorStatus, setCodexConnectorStatus] = useState<CodexConnectorStatus | null>(null);
   const [contextMenuSettings, setContextMenuSettings] = useState<ContextMenuSettings>(DEFAULT_CONTEXT_MENU_SETTINGS);
   const [savingAi, setSavingAi] = useState(false);
   const [testingAi, setTestingAi] = useState(false);
   const [savingCodex, setSavingCodex] = useState(false);
+  const [installingCodexConnector, setInstallingCodexConnector] = useState(false);
   const { isActivated, licenseKey, activate } = useLicense();
   const { locale, setLocale, languages, t } = useI18n();
 
@@ -122,6 +133,9 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
     codexListHostings()
       .then(setCodexHostings)
       .catch(() => setCodexHostings([]));
+    codexGetConnectorStatus()
+      .then(setCodexConnectorStatus)
+      .catch(() => setCodexConnectorStatus(null));
   }, [open]);
 
   const saveAi = async () => {
@@ -170,6 +184,24 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
       toast.error(String(error));
     } finally {
       setSavingCodex(false);
+    }
+  };
+
+  const installCodexConnector = async () => {
+    setInstallingCodexConnector(true);
+    try {
+      const status = await codexInstallConnector();
+      setCodexConnectorStatus(status);
+      setCodexBridgeEnabled(true);
+      setCodexBridgeRunning(status.bridgeRunning);
+      const settings = await codexGetBridgeSettings();
+      setCodexPort(String(settings.port));
+      setCodexSessionToken(settings.sessionToken ?? null);
+      toast.success(t("settings.codexConnectorInstalled"));
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setInstallingCodexConnector(false);
     }
   };
 
@@ -417,6 +449,31 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                       <p className="text-muted-foreground">
                         Codex receives profile metadata and file listings only. Passwords, API keys and SSH material stay in LoFTP.
                       </p>
+                    </div>
+                    <div className="grid gap-3 rounded-lg border border-border bg-background px-3 py-3 text-xs">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-foreground">{t("settings.codexConnector")}</div>
+                          <p className="mt-1 text-muted-foreground">{t("settings.codexConnectorDesc")}</p>
+                        </div>
+                        <span className={codexConnectorStatus?.installed ? "shrink-0 font-semibold text-green-600 dark:text-green-400" : "shrink-0 font-semibold text-muted-foreground"}>
+                          {codexConnectorStatus?.installed ? t("settings.codexConnectorReady") : t("settings.codexConnectorMissing")}
+                        </span>
+                      </div>
+                      <div className="grid gap-1 text-[11px] text-muted-foreground">
+                        <div>{t("settings.codexConnectorBridge")}: {codexConnectorStatus?.bridgeUrl ?? `http://127.0.0.1:${codexPort || "17642"}`}</div>
+                        {codexConnectorStatus?.pluginPath && <div className="truncate">{t("settings.codexConnectorPath")}: {codexConnectorStatus.pluginPath}</div>}
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={installCodexConnector}
+                          disabled={installingCodexConnector}
+                          className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-file-hover disabled:opacity-40"
+                        >
+                          {installingCodexConnector ? "..." : t("settings.codexConnectorInstall")}
+                        </button>
+                      </div>
                     </div>
                     <div className="rounded-lg border border-border bg-background px-3 py-3 text-xs">
                       <div className="mb-2 font-semibold text-foreground">Available profiles</div>

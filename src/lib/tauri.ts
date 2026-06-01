@@ -419,6 +419,16 @@ export interface CodexBridgeSettings {
   sessionToken?: string | null;
 }
 
+export interface CodexConnectorStatus {
+  installed: boolean;
+  configured: boolean;
+  bridgeRunning: boolean;
+  bridgeUrl: string;
+  pluginPath: string;
+  marketplacePath: string;
+  configPath: string;
+}
+
 export interface CodexHostingSummary {
   id: string;
   name: string;
@@ -439,6 +449,14 @@ export interface CodexActiveContext {
 
 export async function codexGetBridgeSettings(): Promise<CodexBridgeSettings> {
   return invoke("codex_get_bridge_settings");
+}
+
+export async function codexGetConnectorStatus(): Promise<CodexConnectorStatus> {
+  return invoke("codex_get_connector_status");
+}
+
+export async function codexInstallConnector(): Promise<CodexConnectorStatus> {
+  return invoke("codex_install_connector");
 }
 
 export async function codexSaveBridgeSettings(settings: CodexBridgeSettings): Promise<CodexBridgeSettings> {
