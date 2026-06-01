@@ -164,13 +164,21 @@ impl CodexBridgeState {
         std_listener
             .set_nonblocking(true)
             .map_err(|e| format!("Codex bridge nonblocking setup failed: {}", e))?;
-        let listener = TcpListener::from_std(std_listener)
-            .map_err(|e| format!("Codex bridge listener failed: {}", e))?;
         let token = Uuid::new_v4().to_string();
         let task_token = token.clone();
         let (tx, rx) = oneshot::channel();
 
         tauri::async_runtime::spawn(async move {
+            let listener = match TcpListener::from_std(std_listener) {
+                Ok(listener) => listener,
+                Err(error) => {
+                    let _ = app.emit(
+                        "loftp-codex-bridge-error",
+                        json!({ "error": format!("Codex bridge listener failed: {}", error) }),
+                    );
+                    return;
+                }
+            };
             run_bridge_server(app, listener, task_token, rx).await;
         });
 
