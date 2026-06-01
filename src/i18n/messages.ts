@@ -29,6 +29,16 @@ export interface Messages {
     light: string;
     dark: string;
   };
+  filePanel: {
+    name: string;
+    type: string;
+    size: string;
+    modified: string;
+    folder: string;
+    file: string;
+    filesAndDirs: string;
+    resizeColumn: string;
+  };
   settings: {
     title: string;
     license: string;
@@ -73,6 +83,21 @@ export interface Messages {
     aiRemoveSecret: string;
     aiConfigured: string;
     aiMissing: string;
+    integrations: string;
+    appearanceLightPanelsHint: string;
+    contextMenuShowShortcuts: string;
+    aiModel: string;
+    aiBaseUrl: string;
+    aiModelPlaceholder: string;
+    aiBaseUrlPlaceholder: string;
+    aiTest: string;
+    codexBridgeEnable: string;
+    codexBridgePort: string;
+    codexBridgeHint: string;
+    licenseTransfer: string;
+    activationFailed: string;
+    integrationAiApi: string;
+    integrationCodexBridge: string;
   };
   toolbar: {
     newConnection: string;
@@ -233,6 +258,12 @@ export interface Messages {
     outputTitle: string;
     jsonTitle: string;
     guardrails: string;
+    notConfigured: string;
+  };
+  codex: {
+    title: string;
+    bridge: string;
+    bridgeNotRunning: string;
   };
   transferStatus: {
     transferring: string;
@@ -302,7 +333,6 @@ export interface Messages {
       properties: string;
       rename: string;
       delete: string;
-    deletePermanent: string;
     refresh: string;
   };
   hostingTabs: {
@@ -355,6 +385,13 @@ export interface Messages {
     checksumAlgorithm: string;
     checksumResult: string;
     checksumCopy: string;
+    targetFolder: string;
+    batchRenamePrefix: string;
+    splitChunkSizeMb: string;
+    combineOutputFile: string;
+    localFilesOnly: string;
+    localPanelOnly: string;
+    remoteNotConnected: string;
   };
   toasts: {
     archiveCreated: string;
@@ -364,6 +401,9 @@ export interface Messages {
     onedriveOpenedStored: string;
     onedriveOpenedPicker: string;
     connectionFailed: string;
+    contextMenuNoItems: string;
+    contextMenuOpenFailed: string;
+    aiLocalTextOnly: string;
   };
   notFound: {
     message: string;
@@ -632,6 +672,16 @@ function createMessages(nativeName: string): Messages {
       light: "Light",
       dark: "Dark",
     },
+    filePanel: {
+      name: "Name",
+      type: "Type",
+      size: "Size",
+      modified: "Modified",
+      folder: "Folder",
+      file: "File",
+      filesAndDirs: "{files} files, {dirs} folders",
+      resizeColumn: "Resize column",
+    },
     settings: {
       title: "Settings",
       license: "License",
@@ -676,6 +726,21 @@ function createMessages(nativeName: string): Messages {
       aiRemoveSecret: "Remove",
       aiConfigured: "Configured",
       aiMissing: "Missing",
+      integrations: "Integrations",
+      appearanceLightPanelsHint: "In light mode, file panels stay white for readability.",
+      contextMenuShowShortcuts: "Show keyboard shortcuts",
+      aiModel: "Model",
+      aiBaseUrl: "Base URL",
+      aiModelPlaceholder: "for example gpt-4.1 / claude / gemini",
+      aiBaseUrlPlaceholder: "only if the provider requires it",
+      aiTest: "Test",
+      codexBridgeEnable: "Enable local Codex bridge",
+      codexBridgePort: "Localhost port",
+      codexBridgeHint: "Codex uses saved FTP/SFTP profiles through LoFTP. Passwords and API keys are not returned to the conversation.",
+      licenseTransfer: "Transfer license to this computer",
+      activationFailed: "Activation failed.",
+      integrationAiApi: "AI through user API",
+      integrationCodexBridge: "Codex through local bridge",
     },
     toolbar: {
       newConnection: "New connection",
@@ -836,6 +901,12 @@ function createMessages(nativeName: string): Messages {
       outputTitle: "Output",
       jsonTitle: "Structured JSON",
       guardrails: "Guardrails",
+      notConfigured: "AI is not configured yet. Open Settings -> AI and add your provider.",
+    },
+    codex: {
+      title: "Codex",
+      bridge: "Local Codex bridge",
+      bridgeNotRunning: "Codex bridge is not running yet. Open Settings -> Codex to enable it.",
     },
     transferStatus: {
       transferring: "Transferring",
@@ -905,7 +976,6 @@ function createMessages(nativeName: string): Messages {
       properties: "Properties",
       rename: "Rename",
       delete: "Delete",
-      deletePermanent: "Delete permanently",
       refresh: "Refresh",
     },
     hostingTabs: {
@@ -958,6 +1028,13 @@ function createMessages(nativeName: string): Messages {
       checksumAlgorithm: "Algorithm",
       checksumResult: "Checksum",
       checksumCopy: "Copy",
+      targetFolder: "Target folder",
+      batchRenamePrefix: "Prefix",
+      splitChunkSizeMb: "Part size in MB",
+      combineOutputFile: "Output file",
+      localFilesOnly: "This operation is available for local files only.",
+      localPanelOnly: "Pasting files is available for a local panel only.",
+      remoteNotConnected: "Remote panel is not connected.",
     },
     toasts: {
       archiveCreated: "Archive created",
@@ -967,6 +1044,9 @@ function createMessages(nativeName: string): Messages {
       onedriveOpenedStored: "OneDrive was opened via the stored path.",
       onedriveOpenedPicker: "OneDrive was opened via the system folder picker.",
       connectionFailed: "Connection failed",
+      contextMenuNoItems: "No context menu item is enabled in settings.",
+      contextMenuOpenFailed: "Context menu could not be opened.",
+      aiLocalTextOnly: "AI file explanation is available for local text files only.",
     },
     notFound: {
       message: "Oops! Page not found",
@@ -986,12 +1066,15 @@ function createMessages(nativeName: string): Messages {
 
 const baseEn = createMessages("English");
 
-function withMeta(localeName: string, overrides: Partial<Messages> = {}): Messages {
+type MessageOverrides = { [K in keyof Messages]?: Partial<Messages[K]> };
+
+function withMeta(localeName: string, overrides: MessageOverrides = {}): Messages {
   return {
     ...baseEn,
     ...overrides,
     meta: { nativeName: localeName },
     common: { ...baseEn.common, ...(overrides.common ?? {}) },
+    filePanel: { ...baseEn.filePanel, ...(overrides.filePanel ?? {}) },
     settings: { ...baseEn.settings, ...(overrides.settings ?? {}) },
     toolbar: { ...baseEn.toolbar, ...(overrides.toolbar ?? {}) },
     about: { ...baseEn.about, ...(overrides.about ?? {}) },
@@ -1005,6 +1088,7 @@ function withMeta(localeName: string, overrides: Partial<Messages> = {}): Messag
     editor: { ...baseEn.editor, ...(overrides.editor ?? {}) },
     quickView: { ...baseEn.quickView, ...(overrides.quickView ?? {}) },
     ai: { ...baseEn.ai, ...(overrides.ai ?? {}) },
+    codex: { ...baseEn.codex, ...(overrides.codex ?? {}) },
     transferStatus: { ...baseEn.transferStatus, ...(overrides.transferStatus ?? {}) },
     transferQueue: { ...baseEn.transferQueue, ...(overrides.transferQueue ?? {}) },
     functionKeys: { ...baseEn.functionKeys, ...(overrides.functionKeys ?? {}) },
@@ -1041,6 +1125,16 @@ export const messages: Record<Locale, Messages> = {
       dir: "〈DIR〉",
       light: "Světlý",
       dark: "Tmavý",
+    },
+    filePanel: {
+      name: "Název",
+      type: "Typ",
+      size: "Velikost",
+      modified: "Změněno",
+      folder: "Složka",
+      file: "Soubor",
+      filesAndDirs: "{files} souborů, {dirs} složek",
+      resizeColumn: "Změnit šířku sloupce",
     },
     settings: {
       title: "Nastavení",
@@ -1086,6 +1180,21 @@ export const messages: Record<Locale, Messages> = {
       aiRemoveSecret: "Odebrat",
       aiConfigured: "Nastaveno",
       aiMissing: "Chybí",
+      integrations: "Integrace",
+      appearanceLightPanelsHint: "Ve světlém režimu zůstávají panely se soubory bílé kvůli čitelnosti.",
+      contextMenuShowShortcuts: "Zobrazovat klávesové zkratky",
+      aiModel: "Model",
+      aiBaseUrl: "Base URL",
+      aiModelPlaceholder: "např. gpt-4.1 / claude / gemini",
+      aiBaseUrlPlaceholder: "jen pokud provider vyžaduje",
+      aiTest: "Test",
+      codexBridgeEnable: "Zapnout lokální Codex bridge",
+      codexBridgePort: "Localhost port",
+      codexBridgeHint: "Codex používá uložené FTP/SFTP profily přes LoFTP. Hesla a API klíče se nevrací do konverzace.",
+      licenseTransfer: "Převést licenci na tento počítač",
+      activationFailed: "Aktivace se nepodařila.",
+      integrationAiApi: "AI přes uživatelské API",
+      integrationCodexBridge: "Codex přes lokální bridge",
     },
     toolbar: {
       newConnection: "Nové připojení",
@@ -1246,6 +1355,12 @@ export const messages: Record<Locale, Messages> = {
       outputTitle: "Výstup",
       jsonTitle: "Strukturovaný JSON",
       guardrails: "Guardraily",
+      notConfigured: "AI ještě není nastavená. Otevřete Nastavení -> AI a doplňte providera.",
+    },
+    codex: {
+      title: "Codex",
+      bridge: "Lokální Codex bridge",
+      bridgeNotRunning: "Codex bridge zatím neběží. Otevřete Nastavení -> Codex a zapněte ho.",
     },
     transferStatus: {
       transferring: "Přenáší se",
@@ -1315,7 +1430,6 @@ export const messages: Record<Locale, Messages> = {
       properties: "Vlastnosti",
       rename: "Přejmenovat",
       delete: "Smazat",
-      deletePermanent: "Smazat trvale",
       refresh: "Obnovit",
     },
     hostingTabs: {
@@ -1368,6 +1482,13 @@ export const messages: Record<Locale, Messages> = {
       checksumAlgorithm: "Algoritmus",
       checksumResult: "Kontrolní součet",
       checksumCopy: "Kopírovat",
+      targetFolder: "Cílová složka",
+      batchRenamePrefix: "Prefix",
+      splitChunkSizeMb: "Velikost části v MB",
+      combineOutputFile: "Výstupní soubor",
+      localFilesOnly: "Tato operace je dostupná jen pro lokální soubory.",
+      localPanelOnly: "Vkládání souborů je dostupné jen pro lokální panel.",
+      remoteNotConnected: "Vzdálený panel není připojený.",
     },
     toasts: {
       archiveCreated: "Archiv vytvořen",
@@ -1377,6 +1498,9 @@ export const messages: Record<Locale, Messages> = {
       onedriveOpenedStored: "OneDrive byl otevřen přes uloženou cestu.",
       onedriveOpenedPicker: "OneDrive byl otevřen přes systémový výběr složky.",
       connectionFailed: "Připojení selhalo",
+      contextMenuNoItems: "V nastavení kontextového menu není povolená žádná položka.",
+      contextMenuOpenFailed: "Kontextové menu se nepodařilo otevřít.",
+      aiLocalTextOnly: "AI vysvětlení souboru je dostupné jen pro lokální textové soubory.",
     },
     legal: {
       copyrightNotice: "© 2026 Localio Labs s.r.o. LoFTP je veřejně sdílený projekt.",
@@ -1501,11 +1625,11 @@ export const messages: Record<Locale, Messages> = {
     purchase: { doneTitle: "Zahlung im Browser geöffnet", doneBody: "Schließen Sie die Zahlung in Ihrem Browser ab. Nach erfolgreicher Zahlung wird der Aktivierungsschlüssel an {email} gesendet.", doneHint: "Geben Sie den Code unter Einstellungen -> Aktivierungscode ein.", title: "LoFTP-Entwicklung unterstützen", securePayment: "Sichere Zahlung", lifetimeLicense: "Beitrag zum Open-Source-Projekt", email: "E-Mail (für Aktivierungszustellung)", redirectNotice: "Sie werden zur sicheren Stripe-Zahlungsseite weitergeleitet.", openPayment: "Zur Zahlung fortfahren" },
     editor: { unsupported: "Diese Datei kann nicht bearbeitet werden (Binärdatei).", unsavedConfirm: "Datei wurde nicht gespeichert. Trotzdem schließen?", saving: "Speichere...", save: "Speichern", loadingFile: "Datei wird geladen...", lines: "{count} Zeilen", unsaved: "Nicht gespeichert", saveShortcut: "Ctrl+S zum Speichern" },
     quickView: { loading: "Wird geladen...", imageTooLarge: "Bild ist für die Vorschau zu groß ({size})", pdfTooLarge: "PDF ist für die Vorschau zu groß ({size})", lines: "{count} Zeilen" },
-    ai: { outputTitle: "Ausgabe", jsonTitle: "Strukturiertes JSON", guardrails: "Schutzregeln" },
+    ai: { outputTitle: "Ausgabe", jsonTitle: "Strukturiertes JSON", guardrails: "Schutzregeln", notConfigured: "AI ist noch nicht konfiguriert." },
     transferStatus: { transferring: "Übertragung läuft", done: "Fertig", error: "Übertragungsfehler", paused: "Pausiert", queued: "In Warteschlange", files: "Dateien", active: "Aktiv", pending: "Ausstehend", completed: "{count} Dateien abgeschlossen", errors: "{count} Fehler", cancelAll: "Alle Transfers abbrechen" },
     transferQueue: { title: "Transferwarteschlange", active: "Aktiv", pending: "Wartend", done: "Fertig", errors: "Fehler", retry: "Erneut versuchen", moveUp: "Nach oben", cancel: "Abbrechen" },
     functionKeys: { view: "Anzeigen", edit: "Bearbeiten", copy: "Kopieren", move: "Verschieben", folder: "Ordner", delete: "Löschen", search: "Suchen" },
-    contextMenu: { copyPath: "Pfad kopieren", copyName: "Name kopieren", copyBaseName: "Name ohne Erweiterung kopieren", copyFiles: "Dateien kopieren", pasteFiles: "Dateien einfügen", openInFinder: "Im Finder öffnen", openInVsCode: "In VS Code öffnen", openNatively: "Im System öffnen", openWith: "Öffnen mit…", openAsArchive: "Als Archiv öffnen…", openArchive: "Archiv öffnen", createArchive: "Archiv erstellen…", extractHere: "Hier entpacken", extractTo: "Entpacken nach…", copyTo: "Kopieren nach…", moveTo: "Verschieben nach…", chmod: "Berechtigungen ändern…", changeDate: "Datum ändern…", calculateChecksum: "Prüfsumme berechnen…", batchRename: "Stapel-Umbenennung…", newFile: "Neue Datei", newFolder: "Neuer Ordner", splitFile: "Datei teilen…", combineFiles: "Dateien zusammenführen…", selectAll: "Alle auswählen", deselectAll: "Auswahl aufheben", invertSelection: "Auswahl umkehren", selectByExtension: "Nach Erweiterung auswählen", selectByPattern: "Nach Muster auswählen…", compareFolders: "Ordner vergleichen", aiExplainFile: "AI-Datei erklären", codexExplainFile: "Mit Codex erklären", properties: "Eigenschaften", rename: "Umbenennen", delete: "Löschen", deletePermanent: "Dauerhaft löschen", refresh: "Aktualisieren" },
+    contextMenu: { copyPath: "Pfad kopieren", copyName: "Name kopieren", copyBaseName: "Name ohne Erweiterung kopieren", copyFiles: "Dateien kopieren", pasteFiles: "Dateien einfügen", openInFinder: "Im Finder öffnen", openInVsCode: "In VS Code öffnen", openNatively: "Im System öffnen", openWith: "Öffnen mit…", openAsArchive: "Als Archiv öffnen…", openArchive: "Archiv öffnen", createArchive: "Archiv erstellen…", extractHere: "Hier entpacken", extractTo: "Entpacken nach…", copyTo: "Kopieren nach…", moveTo: "Verschieben nach…", chmod: "Berechtigungen ändern…", changeDate: "Datum ändern…", calculateChecksum: "Prüfsumme berechnen…", batchRename: "Stapel-Umbenennung…", newFile: "Neue Datei", newFolder: "Neuer Ordner", splitFile: "Datei teilen…", combineFiles: "Dateien zusammenführen…", selectAll: "Alle auswählen", deselectAll: "Auswahl aufheben", invertSelection: "Auswahl umkehren", selectByExtension: "Nach Erweiterung auswählen", selectByPattern: "Nach Muster auswählen…", compareFolders: "Ordner vergleichen", aiExplainFile: "AI-Datei erklären", codexExplainFile: "Mit Codex erklären", properties: "Eigenschaften", rename: "Umbenennen", delete: "Löschen", refresh: "Aktualisieren" },
     hostingTabs: { empty: 'Keine gespeicherten Hostings. Klicken Sie auf "Neu+", um eines hinzuzufügen.', editAria: "{name} bearbeiten", deleteAria: "{name} löschen", deleteTitle: "Gespeicherten Zugang wirklich löschen?", deleteMessage: 'Das Konto "{name}" wird mitsamt Passwort aus den gespeicherten Verbindungen entfernt.', deleteFallback: "Diese Aktion entfernt den gespeicherten Zugang." },
     archive: { filesAndDirs: "{files} Dateien, {dirs} Ordner", total: "Gesamt: {size}", extracting: "Entpacke...", extractSelected: "Auswahl entpacken", extractAll: "Alles entpacken" },
     properties: { title: "Eigenschaften", name: "Name", path: "Pfad", type: "Typ", folder: "Ordner", file: "Datei", size: "Größe", modified: "Geändert", permissions: "Berechtigungen" },
@@ -1548,7 +1672,7 @@ export const messages: Record<Locale, Messages> = {
     common: { close: "Zavrieť", cancel: "Zrušiť", save: "Uložiť", saveChanges: "Uložiť zmeny", delete: "Zmazať", rename: "Premenovať", create: "Vytvoriť", continue: "Pokračovať", install: "Nainštalovať", loading: "Načítavam...", local: "Miestne", server: "Server", all: "Všetko", selectedCount: "{count} vybrané", filesCountLabel: "Súbory: {done}/{total}", dir: "〈ADR〉", light: "Svetlá", dark: "Tmavá" },
     settings: { title: "Nastavenia", license: "Licencia", fullVersionActivated: "Plná verzia aktivovaná", activate: "Aktivovať", deactivateLicense: "Deaktivovať licenciu", licenseExpired: "Licencia vypršala", licenseRevoked: "Licencia zrušená", licenseLimitExceeded: "Prekročený limit zariadení", licenseInvalid: "Neplatná licencia", licenseExpiredDesc: "Vaša aktivácia vypršala. Aplikácia ďalej funguje, ale informačné okno o podpore projektu zostane zobrazené.", licenseRevokedDesc: "Vaša licencia bola zrušená. Kontaktujte podporu.", licenseLimitExceededDesc: "Bol prekročený maximálny počet zariadení pre túto aktiváciu. Deaktivujte iné zariadenie alebo použite inú aktiváciu.", appearance: "Vzhľad", language: "Jazyk", tabGeneral: "Všeobecné", tabAi: "AI", contextMenu: "Kontextová ponuka", contextMenuDesc: "Zvoľte, ktoré položky sa zobrazia v ponuke pravého tlačidla", contextMenuOpen: "Otvoriť", contextMenuClipboard: "Schránka", contextMenuSelection: "Výber", contextMenuFileOps: "Súborové operácie", contextMenuArchive: "Archívy", contextMenuProps: "Vlastnosti a atribúty", contextMenuAdvanced: "Pokročilé", contextMenuDestructive: "Zmazať", contextMenuResetAll: "Obnoviť všetko", ai: "AI", aiEnable: "Zapnúť AI vrstvu", aiEnableDesc: "Pripraví LoFTP na AI asistované workflow, routing modelov a konfiguráciu providerov.", aiOn: "Zapnuté", aiOff: "Vypnuté", aiResetSection: "Obnoviť AI nastavenia", aiResetDesc: "Vráti predvolené presety providerov a policy hodnoty pre toto zariadenie.", aiReset: "Reset AI", aiProviders: "Provideri", aiApiKey: "API kľúč", aiApiKeyConfigured: "Bezpečne uložený v systémovom keychaine.", aiApiKeyMissing: "Pre tohto providera nie je uložený žiadny API kľúč.", aiApiKeyPlaceholder: "Vložiť API kľúč", aiRemoveSecret: "Odobrať", aiConfigured: "Nastavené", aiMissing: "Chýba" },
     toolbar: { newConnection: "Nové pripojenie", refresh: "Obnoviť", disconnect: "Odpojiť", upload: "Nahrať", download: "Stiahnuť", folder: "Priečinok", rename: "Premenovať", delete: "Zmazať", search: "Hľadať", compare: "Porovnať", openArchive: "Otvoriť archív", createArchive: "Vytvoriť archív", settings: "Nastavenia", about: "O aplikácii" },
-    ai: { outputTitle: "Výstup", jsonTitle: "Štruktúrovaný JSON", guardrails: "Guardraily" },
+    ai: { outputTitle: "Výstup", jsonTitle: "Štruktúrovaný JSON", guardrails: "Guardraily", notConfigured: "AI ešte nie je nastavená." },
     about: { version: "Verzia {version}", description: "Desktop FTP/SFTP klient pre macOS so zameraním na rýchlu správu súborov a prenosov.", eula: "Licenčné podmienky", terms: "Obchodné podmienky", privacy: "Ochrana súkromia", updates: "Aktualizácie", checking: "Kontrolujem...", check: "Skontrolovať", latest: "Najnovšia verzia", updateAvailable: "K dispozícii v{version}", installing: "Inštalujem... {percent} %", updateError: "Chyba aktualizácie", notChecked: "Neskontrolované", updatesNotConfigured: "Aktualizácie nie sú nakonfigurované" },
     driveSelector: { volumes: "Disky", cloud: "Cloud", servers: "Servery", quickAccess: "Rýchly prístup", home: "Domovský priečinok", desktop: "Plocha", downloads: "Stiahnuté súbory", free: "voľné" },
     search: { title: "Hľadať súbory", searchIn: "Hľadať v:", fileName: "Názov súboru (glob)", containingText: "Obsahuje text", subfolders: "Podpriečinky", caseSensitive: "Rozlišovať veľkosť písmen", search: "Hľadať", searching: "Hľadám...", found: "Nájdené:", results: "výsledkov", noResults: "Žiadne výsledky", aiSearch: "AI hľadanie" },
@@ -1559,7 +1683,7 @@ export const messages: Record<Locale, Messages> = {
     transferStatus: { transferring: "Prenáša sa", done: "Dokončené", error: "Chyba prenosu", paused: "Pozastavené", queued: "Vo fronte", files: "Súbory", active: "Aktívne", pending: "Čaká", completed: "Dokončených {count} súborov", errors: "{count} chýb", cancelAll: "Zrušiť všetky prenosy" },
     transferQueue: { title: "Front prenosov", active: "Aktívne", pending: "Čaká", done: "Hotovo", errors: "Chyby", retry: "Skúsiť znova", moveUp: "Presunúť vyššie", cancel: "Zrušiť" },
     functionKeys: { view: "Zobraziť", edit: "Upraviť", copy: "Kopírovať", move: "Presunúť", folder: "Priečinok", delete: "Zmazať", search: "Hľadať" },
-    contextMenu: { copyPath: "Kopírovať cestu", copyName: "Kopírovať názov", copyBaseName: "Kopírovať názov bez prípony", copyFiles: "Kopírovať súbory", pasteFiles: "Vložiť súbory", openInFinder: "Otvoriť vo Finderi", openInVsCode: "Otvoriť vo VS Code", openNatively: "Otvoriť v systéme", openWith: "Otvoriť pomocou…", openAsArchive: "Otvoriť ako archív…", openArchive: "Otvoriť archív", createArchive: "Vytvoriť archív…", extractHere: "Rozbaliť sem", extractTo: "Rozbaliť do…", copyTo: "Kopírovať do…", moveTo: "Presunúť do…", chmod: "Zmeniť oprávnenia…", changeDate: "Zmeniť dátum…", calculateChecksum: "Vypočítať kontrolný súčet…", batchRename: "Hromadné premenovanie…", newFile: "Nový súbor", newFolder: "Nový priečinok", splitFile: "Rozdeliť súbor…", combineFiles: "Spojiť súbory…", selectAll: "Vybrať všetko", deselectAll: "Zrušiť výber", invertSelection: "Invertovať výber", selectByExtension: "Vybrať podľa prípony", selectByPattern: "Vybrať podľa vzoru…", compareFolders: "Porovnať priečinky", aiExplainFile: "AI vysvetliť súbor", codexExplainFile: "Vysvetliť cez Codex", properties: "Vlastnosti", rename: "Premenovať", delete: "Zmazať", deletePermanent: "Zmazať natrvalo", refresh: "Obnoviť" },
+    contextMenu: { copyPath: "Kopírovať cestu", copyName: "Kopírovať názov", copyBaseName: "Kopírovať názov bez prípony", copyFiles: "Kopírovať súbory", pasteFiles: "Vložiť súbory", openInFinder: "Otvoriť vo Finderi", openInVsCode: "Otvoriť vo VS Code", openNatively: "Otvoriť v systéme", openWith: "Otvoriť pomocou…", openAsArchive: "Otvoriť ako archív…", openArchive: "Otvoriť archív", createArchive: "Vytvoriť archív…", extractHere: "Rozbaliť sem", extractTo: "Rozbaliť do…", copyTo: "Kopírovať do…", moveTo: "Presunúť do…", chmod: "Zmeniť oprávnenia…", changeDate: "Zmeniť dátum…", calculateChecksum: "Vypočítať kontrolný súčet…", batchRename: "Hromadné premenovanie…", newFile: "Nový súbor", newFolder: "Nový priečinok", splitFile: "Rozdeliť súbor…", combineFiles: "Spojiť súbory…", selectAll: "Vybrať všetko", deselectAll: "Zrušiť výber", invertSelection: "Invertovať výber", selectByExtension: "Vybrať podľa prípony", selectByPattern: "Vybrať podľa vzoru…", compareFolders: "Porovnať priečinky", aiExplainFile: "AI vysvetliť súbor", codexExplainFile: "Vysvetliť cez Codex", properties: "Vlastnosti", rename: "Premenovať", delete: "Zmazať", refresh: "Obnoviť" },
     hostingTabs: { empty: 'Žiadne uložené hostingy. Kliknite na "Nový+" pre pridanie.', editAria: "Upraviť {name}", deleteAria: "Zmazať {name}", deleteTitle: "Naozaj zmazať uložený prístup?", deleteMessage: 'Účet "{name}" bude odstránený z uložených pripojení vrátane hesla.', deleteFallback: "Táto akcia odstráni uložený prístup." },
     archive: { filesAndDirs: "{files} súborov, {dirs} priečinkov", total: "Spolu: {size}", extracting: "Rozbaľujem...", extractSelected: "Rozbaliť vybrané", extractAll: "Rozbaliť všetko" },
     properties: { title: "Vlastnosti", name: "Názov", path: "Cesta", type: "Typ", folder: "Priečinok", file: "Súbor", size: "Veľkosť", modified: "Zmenené", permissions: "Oprávnenia" },
@@ -1572,7 +1696,7 @@ export const messages: Record<Locale, Messages> = {
     common: { close: "Zamknij", cancel: "Anuluj", save: "Zapisz", saveChanges: "Zapisz zmiany", delete: "Usuń", rename: "Zmień nazwę", create: "Utwórz", continue: "Kontynuuj", install: "Zainstaluj", loading: "Ładowanie...", local: "Lokalne", server: "Serwer", all: "Wszystko", selectedCount: "Wybrano: {count}", filesCountLabel: "Pliki: {done}/{total}", dir: "〈KAT〉", light: "Jasny", dark: "Ciemny" },
     settings: { title: "Ustawienia", license: "Licencja", fullVersionActivated: "Pełna wersja aktywowana", activate: "Aktywuj", deactivateLicense: "Dezaktywuj licencję", licenseExpired: "Licencja wygasła", licenseRevoked: "Licencja cofnięta", licenseLimitExceeded: "Przekroczono limit urządzeń", licenseInvalid: "Nieprawidłowa licencja", licenseExpiredDesc: "Twoja aktywacja wygasła. Aplikacja nadal działa, ale informacja o wsparciu projektu pozostanie widoczna.", licenseRevokedDesc: "Twoja licencja została cofnięta. Skontaktuj się z pomocą techniczną.", licenseLimitExceededDesc: "Osiągnięto maksymalną liczbę urządzeń dla tej aktywacji. Dezaktywuj inne urządzenie lub użyj innej aktywacji.", appearance: "Wygląd", language: "Język", tabGeneral: "Ogólne", tabAi: "AI", contextMenu: "Menu kontekstowe", contextMenuDesc: "Wybierz, które elementy pojawią się w menu prawego przycisku", contextMenuOpen: "Otwórz", contextMenuClipboard: "Schowek", contextMenuSelection: "Zaznaczenie", contextMenuFileOps: "Operacje na plikach", contextMenuArchive: "Archiwa", contextMenuProps: "Właściwości i atrybuty", contextMenuAdvanced: "Zaawansowane", contextMenuDestructive: "Usuń", contextMenuResetAll: "Resetuj wszystko", ai: "AI", aiEnable: "Włącz warstwę AI", aiEnableDesc: "Przygotowuje LoFTP do workflow wspieranych przez AI, routingu modeli i konfiguracji providerów.", aiOn: "Włączone", aiOff: "Wyłączone", aiResetSection: "Reset ustawień AI", aiResetDesc: "Przywraca domyślne presety providerów i wartości policy dla tego urządzenia.", aiReset: "Reset AI", aiProviders: "Providerzy", aiApiKey: "Klucz API", aiApiKeyConfigured: "Bezpiecznie zapisany w systemowym keychainie.", aiApiKeyMissing: "Dla tego providera nie zapisano żadnego klucza API.", aiApiKeyPlaceholder: "Wklej klucz API", aiRemoveSecret: "Usuń", aiConfigured: "Skonfigurowano", aiMissing: "Brak" },
     toolbar: { newConnection: "Nowe połączenie", refresh: "Odśwież", disconnect: "Rozłącz", upload: "Prześlij", download: "Pobierz", folder: "Folder", rename: "Zmień nazwę", delete: "Usuń", search: "Szukaj", compare: "Porównaj", openArchive: "Otwórz archiwum", createArchive: "Utwórz archiwum", settings: "Ustawienia", about: "O aplikacji" },
-    ai: { outputTitle: "Wynik", jsonTitle: "Strukturalny JSON", guardrails: "Guardraile" },
+    ai: { outputTitle: "Wynik", jsonTitle: "Strukturalny JSON", guardrails: "Guardraile", notConfigured: "AI nie jest jeszcze skonfigurowana." },
     about: { version: "Wersja {version}", description: "Desktopowy klient FTP/SFTP dla macOS skoncentrowany na szybkiej obsłudze plików i transferów.", eula: "Warunki licencji", terms: "Warunki handlowe", privacy: "Prywatność", updates: "Aktualizacje", checking: "Sprawdzanie...", check: "Sprawdź", latest: "Najnowsza wersja", updateAvailable: "Dostępna: v{version}", installing: "Instalowanie... {percent} %", updateError: "Błąd aktualizacji", notChecked: "Nie sprawdzono", updatesNotConfigured: "Aktualizacje nie są skonfigurowane" },
     driveSelector: { volumes: "Dyski", cloud: "Chmura", servers: "Serwery", quickAccess: "Szybki dostęp", home: "Folder domowy", desktop: "Pulpit", downloads: "Pobrane", free: "wolne" },
     search: { title: "Szukaj plików", searchIn: "Szukaj w:", fileName: "Nazwa pliku (glob)", containingText: "Zawiera tekst", subfolders: "Podfoldery", caseSensitive: "Uwzględniaj wielkość liter", search: "Szukaj", searching: "Szukanie...", found: "Znaleziono:", results: "wyników", noResults: "Brak wyników", aiSearch: "AI search" },
@@ -1583,7 +1707,7 @@ export const messages: Record<Locale, Messages> = {
     transferStatus: { transferring: "Trwa przesyłanie", done: "Zakończono", error: "Błąd transferu", paused: "Wstrzymano", queued: "W kolejce", files: "Pliki", active: "Aktywne", pending: "Oczekuje", completed: "Ukończono {count} plików", errors: "{count} błędów", cancelAll: "Anuluj wszystkie transfery" },
     transferQueue: { title: "Kolejka transferów", active: "Aktywne", pending: "Oczekuje", done: "Gotowe", errors: "Błędy", retry: "Ponów", moveUp: "Przesuń wyżej", cancel: "Anuluj" },
     functionKeys: { view: "Podgląd", edit: "Edytuj", copy: "Kopiuj", move: "Przenieś", folder: "Folder", delete: "Usuń", search: "Szukaj" },
-    contextMenu: { copyPath: "Kopiuj ścieżkę", copyName: "Kopiuj nazwę", copyBaseName: "Kopiuj nazwę bez rozszerzenia", copyFiles: "Kopiuj pliki", pasteFiles: "Wklej pliki", openInFinder: "Otwórz w Finderze", openInVsCode: "Otwórz w VS Code", openNatively: "Otwórz w systemie", openWith: "Otwórz za pomocą…", openAsArchive: "Otwórz jako archiwum…", openArchive: "Otwórz archiwum", createArchive: "Utwórz archiwum…", extractHere: "Rozpakuj tutaj", extractTo: "Rozpakuj do…", copyTo: "Kopiuj do…", moveTo: "Przenieś do…", chmod: "Zmień uprawnienia…", changeDate: "Zmień datę…", calculateChecksum: "Oblicz sumę kontrolną…", batchRename: "Zbiorcza zmiana nazwy…", newFile: "Nowy plik", newFolder: "Nowy folder", splitFile: "Podziel plik…", combineFiles: "Połącz pliki…", selectAll: "Zaznacz wszystko", deselectAll: "Odznacz wszystko", invertSelection: "Odwróć zaznaczenie", selectByExtension: "Zaznacz wg rozszerzenia", selectByPattern: "Zaznacz wg wzorca…", compareFolders: "Porównaj foldery", aiExplainFile: "AI wyjaśnij plik", codexExplainFile: "Wyjaśnij przez Codex", properties: "Właściwości", rename: "Zmień nazwę", delete: "Usuń", deletePermanent: "Usuń na stałe", refresh: "Odśwież" },
+    contextMenu: { copyPath: "Kopiuj ścieżkę", copyName: "Kopiuj nazwę", copyBaseName: "Kopiuj nazwę bez rozszerzenia", copyFiles: "Kopiuj pliki", pasteFiles: "Wklej pliki", openInFinder: "Otwórz w Finderze", openInVsCode: "Otwórz w VS Code", openNatively: "Otwórz w systemie", openWith: "Otwórz za pomocą…", openAsArchive: "Otwórz jako archiwum…", openArchive: "Otwórz archiwum", createArchive: "Utwórz archiwum…", extractHere: "Rozpakuj tutaj", extractTo: "Rozpakuj do…", copyTo: "Kopiuj do…", moveTo: "Przenieś do…", chmod: "Zmień uprawnienia…", changeDate: "Zmień datę…", calculateChecksum: "Oblicz sumę kontrolną…", batchRename: "Zbiorcza zmiana nazwy…", newFile: "Nowy plik", newFolder: "Nowy folder", splitFile: "Podziel plik…", combineFiles: "Połącz pliki…", selectAll: "Zaznacz wszystko", deselectAll: "Odznacz wszystko", invertSelection: "Odwróć zaznaczenie", selectByExtension: "Zaznacz wg rozszerzenia", selectByPattern: "Zaznacz wg wzorca…", compareFolders: "Porównaj foldery", aiExplainFile: "AI wyjaśnij plik", codexExplainFile: "Wyjaśnij przez Codex", properties: "Właściwości", rename: "Zmień nazwę", delete: "Usuń", refresh: "Odśwież" },
     hostingTabs: { empty: 'Brak zapisanych hostingów. Kliknij "Nowy+", aby dodać.', editAria: "Edytuj {name}", deleteAria: "Usuń {name}", deleteTitle: "Usunąć zapisany dostęp?", deleteMessage: 'Konto "{name}" zostanie usunięte z zapisanych połączeń wraz z hasłem.', deleteFallback: "Ta akcja usunie zapisany dostęp." },
     archive: { filesAndDirs: "{files} plików, {dirs} folderów", total: "Razem: {size}", extracting: "Rozpakowywanie...", extractSelected: "Rozpakuj wybrane", extractAll: "Rozpakuj wszystko" },
     properties: { title: "Właściwości", name: "Nazwa", path: "Ścieżka", type: "Typ", folder: "Folder", file: "Plik", size: "Rozmiar", modified: "Zmodyfikowano", permissions: "Uprawnienia" },
@@ -1596,7 +1720,7 @@ export const messages: Record<Locale, Messages> = {
     common: { close: "Cerrar", cancel: "Cancelar", save: "Guardar", saveChanges: "Guardar cambios", delete: "Eliminar", rename: "Renombrar", create: "Crear", continue: "Continuar", install: "Instalar", loading: "Cargando...", local: "Local", server: "Servidor", all: "Todo", selectedCount: "{count} seleccionado(s)", filesCountLabel: "Archivos: {done}/{total}", dir: "〈DIR〉", light: "Claro", dark: "Oscuro" },
     settings: { title: "Ajustes", license: "Licencia", fullVersionActivated: "Versión completa activada", activate: "Activar", deactivateLicense: "Desactivar licencia", licenseExpired: "Licencia expirada", licenseRevoked: "Licencia revocada", licenseLimitExceeded: "Límite de dispositivos excedido", licenseInvalid: "Licencia no válida", licenseExpiredDesc: "Su activación ha expirado. La aplicación sigue funcionando, pero el aviso de apoyo al proyecto permanecerá visible.", licenseRevokedDesc: "Su licencia ha sido revocada. Contacte con soporte.", licenseLimitExceededDesc: "Se ha alcanzado el número máximo de dispositivos para esta activación. Desactive otro dispositivo o use otra activación.", appearance: "Apariencia", language: "Idioma", tabGeneral: "General", tabAi: "AI", contextMenu: "Menú contextual", contextMenuDesc: "Elija qué elementos aparecen en el menú del botón derecho", contextMenuOpen: "Abrir", contextMenuClipboard: "Portapapeles", contextMenuSelection: "Selección", contextMenuFileOps: "Operaciones de archivo", contextMenuArchive: "Archivos", contextMenuProps: "Propiedades y atributos", contextMenuAdvanced: "Avanzado", contextMenuDestructive: "Eliminar", contextMenuResetAll: "Restablecer todo", ai: "AI", aiEnable: "Activar capa AI", aiEnableDesc: "Prepara LoFTP para flujos asistidos por AI, routing de modelos y configuración de providers.", aiOn: "Activado", aiOff: "Desactivado", aiResetSection: "Restablecer AI", aiResetDesc: "Restaura los presets de providers y los valores de policy predeterminados para este dispositivo.", aiReset: "Reset AI", aiProviders: "Providers", aiApiKey: "Clave API", aiApiKeyConfigured: "Guardada de forma segura en el keychain del sistema.", aiApiKeyMissing: "No hay ninguna clave API guardada para este provider.", aiApiKeyPlaceholder: "Pegar clave API", aiRemoveSecret: "Eliminar", aiConfigured: "Configurado", aiMissing: "Falta" },
     toolbar: { newConnection: "Nueva conexión", refresh: "Recargar", disconnect: "Desconectar", upload: "Subir", download: "Descargar", folder: "Carpeta", rename: "Renombrar", delete: "Eliminar", search: "Buscar", compare: "Comparar", openArchive: "Abrir archivo", createArchive: "Crear archivo", settings: "Ajustes", about: "Acerca de" },
-    ai: { outputTitle: "Salida", jsonTitle: "JSON estructurado", guardrails: "Guardrails" },
+    ai: { outputTitle: "Salida", jsonTitle: "JSON estructurado", guardrails: "Guardrails", notConfigured: "AI aún no está configurada." },
     about: { version: "Versión {version}", description: "Cliente FTP/SFTP de escritorio para macOS centrado en la gestión rápida de archivos y transferencias.", eula: "Términos de licencia", terms: "Términos comerciales", privacy: "Privacidad", updates: "Actualizaciones", checking: "Comprobando...", check: "Comprobar", latest: "Última versión", updateAvailable: "Disponible: v{version}", installing: "Instalando... {percent} %", updateError: "Error de actualización", notChecked: "No comprobado", updatesNotConfigured: "Las actualizaciones no están configuradas" },
     driveSelector: { volumes: "Discos", cloud: "Nube", servers: "Servidores", quickAccess: "Acceso rápido", home: "Carpeta personal", desktop: "Escritorio", downloads: "Descargas", free: "libre" },
     search: { title: "Buscar archivos", searchIn: "Buscar en:", fileName: "Nombre de archivo (glob)", containingText: "Que contiene texto", subfolders: "Subcarpetas", caseSensitive: "Distinguir mayúsculas", search: "Buscar", searching: "Buscando...", found: "Encontrado:", results: "resultados", noResults: "Sin resultados", aiSearch: "Búsqueda AI" },
@@ -1607,7 +1731,7 @@ export const messages: Record<Locale, Messages> = {
     transferStatus: { transferring: "Transfiriendo", done: "Completado", error: "Error de transferencia", paused: "Pausado", queued: "En cola", files: "Archivos", active: "Activo", pending: "Pendiente", completed: "{count} archivos completados", errors: "{count} errores", cancelAll: "Cancelar todas las transferencias" },
     transferQueue: { title: "Cola de transferencias", active: "Activo", pending: "Pendiente", done: "Hecho", errors: "Errores", retry: "Reintentar", moveUp: "Mover arriba", cancel: "Cancelar" },
     functionKeys: { view: "Ver", edit: "Editar", copy: "Copiar", move: "Mover", folder: "Carpeta", delete: "Eliminar", search: "Buscar" },
-    contextMenu: { copyPath: "Copiar ruta", copyName: "Copiar nombre", copyBaseName: "Copiar nombre sin extensión", copyFiles: "Copiar archivos", pasteFiles: "Pegar archivos", openInFinder: "Abrir en Finder", openInVsCode: "Abrir en VS Code", openNatively: "Abrir en sistema", openWith: "Abrir con…", openAsArchive: "Abrir como archivo…", openArchive: "Abrir archivo", createArchive: "Crear archivo…", extractHere: "Extraer aquí", extractTo: "Extraer en…", copyTo: "Copiar a…", moveTo: "Mover a…", chmod: "Cambiar permisos…", changeDate: "Cambiar fecha…", calculateChecksum: "Calcular checksum…", batchRename: "Renombrar en lote…", newFile: "Nuevo archivo", newFolder: "Nueva carpeta", splitFile: "Dividir archivo…", combineFiles: "Combinar archivos…", selectAll: "Seleccionar todo", deselectAll: "Deseleccionar todo", invertSelection: "Invertir selección", selectByExtension: "Seleccionar por extensión", selectByPattern: "Seleccionar por patrón…", compareFolders: "Comparar carpetas", aiExplainFile: "AI explicar archivo", codexExplainFile: "Explicar con Codex", properties: "Propiedades", rename: "Renombrar", delete: "Eliminar", deletePermanent: "Eliminar permanentemente", refresh: "Actualizar" },
+    contextMenu: { copyPath: "Copiar ruta", copyName: "Copiar nombre", copyBaseName: "Copiar nombre sin extensión", copyFiles: "Copiar archivos", pasteFiles: "Pegar archivos", openInFinder: "Abrir en Finder", openInVsCode: "Abrir en VS Code", openNatively: "Abrir en sistema", openWith: "Abrir con…", openAsArchive: "Abrir como archivo…", openArchive: "Abrir archivo", createArchive: "Crear archivo…", extractHere: "Extraer aquí", extractTo: "Extraer en…", copyTo: "Copiar a…", moveTo: "Mover a…", chmod: "Cambiar permisos…", changeDate: "Cambiar fecha…", calculateChecksum: "Calcular checksum…", batchRename: "Renombrar en lote…", newFile: "Nuevo archivo", newFolder: "Nueva carpeta", splitFile: "Dividir archivo…", combineFiles: "Combinar archivos…", selectAll: "Seleccionar todo", deselectAll: "Deseleccionar todo", invertSelection: "Invertir selección", selectByExtension: "Seleccionar por extensión", selectByPattern: "Seleccionar por patrón…", compareFolders: "Comparar carpetas", aiExplainFile: "AI explicar archivo", codexExplainFile: "Explicar con Codex", properties: "Propiedades", rename: "Renombrar", delete: "Eliminar", refresh: "Actualizar" },
     hostingTabs: { empty: 'No hay hostings guardados. Haz clic en "Nuevo+" para añadir uno.', editAria: "Editar {name}", deleteAria: "Eliminar {name}", deleteTitle: "¿Eliminar acceso guardado?", deleteMessage: 'La cuenta "{name}" se eliminará de las conexiones guardadas, incluida la contraseña.', deleteFallback: "Esta acción elimina el acceso guardado." },
     archive: { filesAndDirs: "{files} archivos, {dirs} carpetas", total: "Total: {size}", extracting: "Extrayendo...", extractSelected: "Extraer seleccionados", extractAll: "Extraer todo" },
     properties: { title: "Propiedades", name: "Nombre", path: "Ruta", type: "Tipo", folder: "Carpeta", file: "Archivo", size: "Tamaño", modified: "Modificado", permissions: "Permisos" },

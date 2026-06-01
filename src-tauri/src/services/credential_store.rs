@@ -13,6 +13,11 @@ fn license_entry(service_name: &str) -> Result<Entry, String> {
     Entry::new(service_name, "license:activation").map_err(|e| format!("Keyring error: {}", e))
 }
 
+fn ai_api_key_entry(service_name: &str, provider: &str) -> Result<Entry, String> {
+    Entry::new(service_name, &format!("ai:{}:api_key", provider))
+        .map_err(|e| format!("Keyring error: {}", e))
+}
+
 pub fn load_hosting_password(hosting_id: &str) -> Option<String> {
     if let Ok(entry) = hosting_password_entry(SERVICE_NAME, hosting_id) {
         if let Ok(password) = entry.get_password() {
@@ -71,5 +76,23 @@ pub fn delete_license() -> Result<(), String> {
         let entry = license_entry(service)?;
         let _ = entry.delete_credential();
     }
+    Ok(())
+}
+
+pub fn load_ai_api_key(provider: &str) -> Option<String> {
+    let entry = ai_api_key_entry(SERVICE_NAME, provider).ok()?;
+    entry.get_password().ok()
+}
+
+pub fn store_ai_api_key(provider: &str, api_key: &str) -> Result<(), String> {
+    let entry = ai_api_key_entry(SERVICE_NAME, provider)?;
+    entry
+        .set_password(api_key)
+        .map_err(|e| format!("Store AI API key failed: {}", e))
+}
+
+pub fn delete_ai_api_key(provider: &str) -> Result<(), String> {
+    let entry = ai_api_key_entry(SERVICE_NAME, provider)?;
+    let _ = entry.delete_credential();
     Ok(())
 }

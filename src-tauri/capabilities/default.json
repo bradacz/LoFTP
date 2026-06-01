@@ -2,9 +2,20 @@
   "$schema": "https://raw.githubusercontent.com/nickelpack/npal/main/capability-schema.json",
   "identifier": "default",
   "description": "Default permissions for LoFTP",
-  "windows": ["main"],
+  "remote": {
+    "urls": ["http://localhost:1420", "http://127.0.0.1:1420"]
+  },
+  "windows": ["main", "context-menu"],
   "permissions": [
     "core:default",
+    "core:event:default",
+    "core:webview:allow-create-webview-window",
+    "core:webview:allow-webview-close",
+    "core:window:allow-create",
+    "core:window:allow-cursor-position",
+    "core:window:allow-close",
+    "core:window:allow-set-focus",
+    "core:window:allow-start-dragging",
     "dialog:allow-open",
     "shell:allow-open"
   ]

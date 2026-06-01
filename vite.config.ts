@@ -22,5 +22,22 @@ export default defineConfig({
     target: "safari14",
     minify: !process.env.TAURI_DEBUG ? "esbuild" : false,
     sourcemap: !!process.env.TAURI_DEBUG,
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/@tauri-apps")) return "tauri";
+          if (id.includes("node_modules/@radix-ui")) return "radix";
+          if (
+            id.includes("node_modules/lucide-react") ||
+            id.includes("node_modules/@iconify") ||
+            id.includes("node_modules/@remixicon")
+          ) {
+            return "icons";
+          }
+          if (id.includes("node_modules")) return "vendor";
+        },
+      },
+    },
   },
 });

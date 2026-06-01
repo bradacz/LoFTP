@@ -1,9 +1,28 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type React from "react";
+import {
+  Bot,
+  CheckCircle2,
+  Code2,
+  Eye,
+  KeyRound,
+  Laptop,
+  Menu,
+  Moon,
+  PlugZap,
+  Settings,
+  ShieldCheck,
+  Sun,
+} from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Sun, Moon, Settings } from "lucide-react";
 import { useLicense } from "@/hooks/useLicense";
 import { useI18n } from "@/i18n";
 import { messages as localeMessages } from "@/i18n/messages";
+import { cn } from "@/lib/utils";
+import { aiGetSettings, aiSaveSettings, aiTestSettings, codexGetBridgeSettings, codexSaveBridgeSettings } from "@/lib/tauri";
+import { toast } from "@/components/ui/sonner";
+import type { ContextMenuAction, ContextMenuSettings } from "@/types/contextMenu";
+import { DEFAULT_CONTEXT_MENU_SETTINGS, getContextMenuSettings, resetContextMenuSettings, saveContextMenuSettings } from "@/lib/contextMenuSettings";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -12,13 +31,46 @@ interface SettingsDialogProps {
   onThemeChange: (theme: "light" | "dark") => void;
 }
 
+type SettingsSection = "general" | "appearance" | "context" | "ai" | "codex" | "integrations" | "license";
+
+const AI_PROVIDERS = [
+  "OpenAI",
+  "Claude",
+  "Gemini",
+  "Perplexity",
+  "OpenAI-compatible API",
+  "OpenCode API",
+  "NVIDIA",
+];
+
+const CONTEXT_MENU_GROUPS: Array<{ titleKey: string; actions: ContextMenuAction[] }> = [
+  { titleKey: "settings.contextMenuClipboard", actions: ["copyPath", "copyName", "copyBaseName", "copyFiles", "pasteFiles"] },
+  { titleKey: "settings.contextMenuOpen", actions: ["openInFinder", "openInVSCode", "openNatively", "openWith"] },
+  { titleKey: "settings.contextMenuArchive", actions: ["openAsArchive", "openArchive", "createArchive", "extractHere", "extractTo"] },
+  { titleKey: "settings.contextMenuFileOps", actions: ["copyTo", "moveTo", "newFile", "newFolder", "rename", "delete", "refresh", "search"] },
+  { titleKey: "settings.contextMenuSelection", actions: ["selectAll", "deselectAll", "invertSelection", "selectByExtension", "selectByPattern"] },
+  { titleKey: "settings.contextMenuProps", actions: ["properties", "chmod", "changeDate", "calculateChecksum"] },
+  { titleKey: "settings.contextMenuAdvanced", actions: ["batchRename", "splitFile", "combineFiles", "compareFolders", "aiExplainFile", "codexExplainFile"] },
+];
+
 export function SettingsDialog({ open, onClose, theme, onThemeChange }: SettingsDialogProps) {
+  const [activeSection, setActiveSection] = useState<SettingsSection>("general");
   const [activationCode, setActivationCode] = useState("");
   const [activating, setActivating] = useState(false);
   const [activationError, setActivationError] = useState<string | null>(null);
   const [transferAvailable, setTransferAvailable] = useState(false);
+  const [aiProvider, setAiProvider] = useState("OpenAI");
+  const [aiModel, setAiModel] = useState("");
+  const [aiBaseUrl, setAiBaseUrl] = useState("");
+  const [aiKey, setAiKey] = useState("");
+  const [codexBridgeEnabled, setCodexBridgeEnabled] = useState(false);
+  const [codexPort, setCodexPort] = useState("17642");
+  const [contextMenuSettings, setContextMenuSettings] = useState<ContextMenuSettings>(DEFAULT_CONTEXT_MENU_SETTINGS);
+  const [savingAi, setSavingAi] = useState(false);
+  const [testingAi, setTestingAi] = useState(false);
+  const [savingCodex, setSavingCodex] = useState(false);
   const { isActivated, licenseKey, activate } = useLicense();
-  const { locale, setLocale, languages, messages, t } = useI18n();
+  const { locale, setLocale, languages, t } = useI18n();
 
   const handleActivate = async (forceTransfer = false) => {
     if (!activationCode.trim()) return;
@@ -30,7 +82,7 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
         setActivationCode("");
         setTransferAvailable(false);
       } else {
-        setActivationError(result.error ?? "Aktivace se nepodařila.");
+        setActivationError(result.error ?? t("settings.activationFailed"));
         setTransferAvailable(Boolean(result.canTransfer));
       }
     } catch (e) {
@@ -41,140 +93,438 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
     }
   };
 
+  useEffect(() => {
+    if (!open) return;
+
+    setContextMenuSettings(getContextMenuSettings());
+
+    aiGetSettings()
+      .then((settings) => {
+        setAiProvider(settings.provider);
+        setAiModel(settings.model);
+        setAiBaseUrl(settings.baseUrl ?? "");
+      })
+      .catch(() => {});
+
+    codexGetBridgeSettings()
+      .then((settings) => {
+        setCodexBridgeEnabled(settings.enabled);
+        setCodexPort(String(settings.port));
+      })
+      .catch(() => {});
+  }, [open]);
+
+  const saveAi = async () => {
+    setSavingAi(true);
+    try {
+      await aiSaveSettings({
+        provider: aiProvider,
+        model: aiModel,
+        baseUrl: aiBaseUrl || null,
+        apiKey: aiKey || null,
+      });
+      setAiKey("");
+      toast.success(t("common.saveChanges"));
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setSavingAi(false);
+    }
+  };
+
+  const testAi = async () => {
+    setTestingAi(true);
+    try {
+      const result = await aiTestSettings();
+      toast.success(t("settings.aiConfigured"), { description: result.output });
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setTestingAi(false);
+    }
+  };
+
+  const saveCodex = async () => {
+    setSavingCodex(true);
+    try {
+      const port = Number.parseInt(codexPort, 10);
+      const settings = await codexSaveBridgeSettings({
+        enabled: codexBridgeEnabled,
+        port: Number.isFinite(port) ? port : 17642,
+      });
+      setCodexPort(String(settings.port));
+      toast.success(t("common.saveChanges"));
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setSavingCodex(false);
+    }
+  };
+
+  const updateShowShortcuts = (value: boolean) => {
+    const next = { ...contextMenuSettings, showShortcuts: value };
+    setContextMenuSettings(next);
+    saveContextMenuSettings(next);
+  };
+
+  const updateContextMenuAction = (action: ContextMenuAction, value: boolean) => {
+    const next = {
+      ...contextMenuSettings,
+      actions: {
+        ...contextMenuSettings.actions,
+        [action]: value,
+      },
+    };
+    setContextMenuSettings(next);
+    saveContextMenuSettings(next);
+  };
+
+  const resetContextMenu = () => {
+    setContextMenuSettings(resetContextMenuSettings());
+    toast.success(t("settings.contextMenuResetAll"));
+  };
+
+  const sections: Array<{ id: SettingsSection; label: string; icon: React.ReactNode }> = [
+    { id: "general", label: t("settings.tabGeneral"), icon: <Settings className="h-4 w-4" /> },
+    { id: "appearance", label: t("settings.appearance"), icon: <Eye className="h-4 w-4" /> },
+    { id: "context", label: t("settings.contextMenu"), icon: <Menu className="h-4 w-4" /> },
+    { id: "ai", label: t("settings.ai"), icon: <Bot className="h-4 w-4" /> },
+    { id: "codex", label: t("codex.title"), icon: <Code2 className="h-4 w-4" /> },
+    { id: "integrations", label: t("settings.integrations"), icon: <PlugZap className="h-4 w-4" /> },
+    { id: "license", label: t("settings.license"), icon: <ShieldCheck className="h-4 w-4" /> },
+  ];
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[420px] bg-card rounded-xl p-0 gap-0 border-border/50 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center gap-3 px-6 pt-6 pb-4">
-          <div className="w-9 h-9 rounded-[10px] bg-primary/10 flex items-center justify-center shrink-0">
-            <Settings className="h-[18px] w-[18px] text-primary" />
-          </div>
-          <h3 className="text-[16px] font-semibold text-foreground tracking-[-0.2px]">{t("settings.title")}</h3>
-        </div>
-
-        <div className="px-6 pb-5 space-y-5">
-          {/* Activation */}
-          <section>
-            <GroupLabel>{t("settings.license")}</GroupLabel>
-            {isActivated ? (
-              <div className="rounded-[10px] bg-green-500/[0.06] border border-green-600/15 dark:border-green-500/[0.12] px-4 py-3.5">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.4)]" />
-                  <span className="text-[12px] font-medium text-green-600 dark:text-green-400">{t("settings.fullVersionActivated")}</span>
-                </div>
-                {licenseKey && (
-                  <p className="text-[10px] text-muted-foreground/50 mt-2 pl-4 font-mono">{licenseKey.slice(0, 24)}…</p>
-                )}
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) onClose();
+    }}>
+      <DialogContent className="max-h-[calc(100vh-24px)] max-w-[920px] gap-0 overflow-hidden rounded-2xl border-border bg-card p-0 shadow-2xl">
+        <div className="grid h-[min(720px,calc(100vh-24px))] min-h-0 grid-cols-[230px_1fr]">
+          <aside className="border-r border-border bg-toolbar p-4">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+                <Settings className="h-5 w-5" />
               </div>
-            ) : (
-              <div className="rounded-[10px] bg-secondary/40 dark:bg-secondary/20 border border-border/40 px-4 py-3.5">
-                <div className="flex gap-2">
-                  <input
-                    value={activationCode}
-                    onChange={(e) => setActivationCode(e.target.value)}
-                    placeholder="XXXX-LIFE-XXXX-XXXX"
-                    className="flex-1 px-3 py-[7px] text-[12px] bg-background/80 border border-border/60 rounded-lg text-foreground font-mono outline-none focus:border-primary focus:shadow-[0_0_0_3px_hsl(var(--primary)/0.15)] transition-all placeholder:text-muted-foreground/40"
-                    onKeyDown={(e) => e.key === "Enter" && handleActivate()}
-                  />
-                  <button
-                    onClick={handleActivate}
-                    disabled={!activationCode.trim() || activating}
-                    className="px-4 py-[7px] rounded-lg text-[12px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm transition-all disabled:opacity-35"
-                  >
-                    {activating ? "…" : t("settings.activate")}
-                  </button>
-                </div>
-                {activationError && (
-                  <p className="text-[11px] text-destructive mt-2 pl-1">{activationError}</p>
-                )}
-                {transferAvailable && (
-                  <button
-                    onClick={() => handleActivate(true)}
-                    disabled={!activationCode.trim() || activating}
-                    className="mt-2 w-full px-4 py-[7px] rounded-lg text-[12px] font-medium border border-border/50 bg-background/80 text-foreground hover:bg-secondary transition-all disabled:opacity-35"
-                  >
-                    Převést licenci na tento počítač
-                  </button>
-                )}
+              <div>
+                <h3 className="text-base font-semibold tracking-tight">{t("settings.title")}</h3>
+                <p className="text-[11px] text-muted-foreground">LoFTP</p>
               </div>
-            )}
-          </section>
-
-          {/* Theme */}
-          <section>
-            <GroupLabel>{t("settings.appearance")}</GroupLabel>
-            <div className="flex bg-secondary/40 dark:bg-secondary/20 border border-border/40 rounded-[10px] p-[3px] gap-[3px]">
-              <ThemeOption active={theme === "light"} onClick={() => onThemeChange("light")}>
-                <Sun className="h-3.5 w-3.5" />
-                {t("common.light")}
-              </ThemeOption>
-              <ThemeOption active={theme === "dark"} onClick={() => onThemeChange("dark")}>
-                <Moon className="h-3.5 w-3.5" />
-                {t("common.dark")}
-              </ThemeOption>
             </div>
-          </section>
 
-          {/* Language */}
-          <section>
-            <GroupLabel>{t("settings.language")}</GroupLabel>
-            <div className="grid grid-cols-6 gap-[3px] bg-secondary/40 dark:bg-secondary/20 border border-border/40 rounded-[10px] p-[3px]">
-              {languages.map((lang) => (
+            <nav className="space-y-1">
+              {sections.map((section) => (
                 <button
-                  key={lang.value}
-                  onClick={() => setLocale(lang.value)}
-                  title={localeMessages[lang.value].meta.nativeName}
-                  className={`flex flex-col items-center gap-1 py-2.5 rounded-lg text-center transition-all ${
-                    locale === lang.value
-                      ? "bg-background shadow-sm ring-1 ring-border/60"
-                      : "hover:bg-background/50"
-                  }`}
+                  key={section.id}
+                  type="button"
+                  onClick={() => setActiveSection(section.id)}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-semibold transition-colors",
+                    activeSection === section.id
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:bg-panel-header hover:text-foreground"
+                  )}
                 >
-                  <span className="text-[17px] leading-none">{lang.label}</span>
-                  <span className={`text-[9px] font-medium uppercase tracking-wide ${
-                    locale === lang.value ? "text-muted-foreground" : "text-muted-foreground/40"
-                  }`}>
-                    {lang.code}
-                  </span>
+                  {section.icon}
+                  <span>{section.label}</span>
                 </button>
               ))}
-            </div>
-          </section>
-        </div>
+            </nav>
+          </aside>
 
-        {/* Footer */}
-        <div className="flex justify-center px-6 py-4 border-t border-border/30">
-          <button
-            onClick={onClose}
-            className="min-w-[100px] px-5 py-[7px] rounded-lg text-[12px] font-medium border border-border/50 bg-background/80 text-foreground hover:bg-secondary transition-all"
-          >
-            {t("common.close")}
-          </button>
+          <main className="flex min-w-0 flex-col bg-card">
+            <div className="border-b border-border bg-panel-header px-6 py-4">
+              <h4 className="text-lg font-semibold tracking-tight">{sections.find((s) => s.id === activeSection)?.label}</h4>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {activeSection === "general" && (
+                <SettingsCard title={t("settings.language")} icon={<Laptop className="h-4 w-4 text-sky-500" />}>
+                  <div className="grid grid-cols-6 gap-2">
+                    {languages.map((lang) => (
+                      <button
+                        key={lang.value}
+                        onClick={() => setLocale(lang.value)}
+                        title={localeMessages[lang.value].meta.nativeName}
+                        className={cn(
+                          "flex flex-col items-center gap-1 rounded-lg border px-2 py-3 text-center transition-all",
+                          locale === lang.value
+                            ? "border-primary bg-primary/10 text-foreground"
+                            : "border-border bg-background hover:bg-file-hover"
+                        )}
+                      >
+                        <span className="text-xl leading-none">{lang.label}</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{lang.code}</span>
+                      </button>
+                    ))}
+                  </div>
+                </SettingsCard>
+              )}
+
+              {activeSection === "appearance" && (
+                <SettingsCard title={t("settings.appearance")} icon={<Eye className="h-4 w-4 text-amber-500" />}>
+                  <div className="grid grid-cols-2 gap-3">
+                    <ThemeOption active={theme === "light"} onClick={() => onThemeChange("light")} icon={<Sun className="h-5 w-5" />} label={t("common.light")} />
+                    <ThemeOption active={theme === "dark"} onClick={() => onThemeChange("dark")} icon={<Moon className="h-5 w-5" />} label={t("common.dark")} />
+                  </div>
+                  <p className="mt-4 rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+                    {t("settings.appearanceLightPanelsHint")}
+                  </p>
+                </SettingsCard>
+              )}
+
+              {activeSection === "context" && (
+                <SettingsCard title={t("settings.contextMenu")} icon={<Menu className="h-4 w-4 text-orange-500" />}>
+                  <div className="max-h-[calc(100vh-260px)] space-y-4 overflow-y-auto pr-2">
+                    <ContextMenuSettingsGroup title={t("settings.contextMenuAdvanced")}>
+                      <ToggleRow
+                        label={t("settings.contextMenuShowShortcuts")}
+                        checked={contextMenuSettings.showShortcuts}
+                        onChange={updateShowShortcuts}
+                      />
+                    </ContextMenuSettingsGroup>
+
+                    {CONTEXT_MENU_GROUPS.map((group) => (
+                      <ContextMenuSettingsGroup key={group.titleKey} title={t(group.titleKey)}>
+                        {group.actions.map((action) => (
+                          <ToggleRow
+                            key={action}
+                            label={t(`contextMenu.${action}`)}
+                            checked={contextMenuSettings.actions[action]}
+                            onChange={(value) => updateContextMenuAction(action, value)}
+                          />
+                        ))}
+                      </ContextMenuSettingsGroup>
+                    ))}
+
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={resetContextMenu}
+                        className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-file-hover"
+                      >
+                        {t("settings.contextMenuResetAll")}
+                      </button>
+                    </div>
+                  </div>
+                </SettingsCard>
+              )}
+
+              {activeSection === "ai" && (
+                <SettingsCard title={t("settings.ai")} icon={<Bot className="h-4 w-4 text-emerald-500" />}>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label={t("settings.aiProviders")}>
+                      <select value={aiProvider} onChange={(e) => setAiProvider(e.target.value)} className="settings-input">
+                        {AI_PROVIDERS.map((provider) => (
+                          <option key={provider} value={provider}>{provider}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label={t("settings.aiModel")}>
+                      <input value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="settings-input" placeholder={t("settings.aiModelPlaceholder")} />
+                    </Field>
+                    <Field label={t("settings.aiBaseUrl")}>
+                      <input value={aiBaseUrl} onChange={(e) => setAiBaseUrl(e.target.value)} className="settings-input" placeholder={t("settings.aiBaseUrlPlaceholder")} />
+                    </Field>
+                    <Field label={t("settings.aiApiKey")}>
+                      <input value={aiKey} onChange={(e) => setAiKey(e.target.value)} className="settings-input" type="password" placeholder={t("settings.aiApiKeyPlaceholder")} />
+                    </Field>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between rounded-lg border border-border bg-background px-3 py-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <KeyRound className="h-4 w-4 text-primary" />
+                      <span>{t("settings.aiApiKeyConfigured")}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={testAi}
+                        disabled={testingAi}
+                        className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-file-hover disabled:opacity-40"
+                      >
+                        {testingAi ? "..." : t("settings.aiTest")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={saveAi}
+                        disabled={savingAi || !aiProvider || !aiModel}
+                        className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-40"
+                      >
+                        {savingAi ? "..." : t("common.save")}
+                      </button>
+                    </div>
+                  </div>
+                </SettingsCard>
+              )}
+
+              {activeSection === "codex" && (
+                <SettingsCard title={t("codex.bridge")} icon={<Code2 className="h-4 w-4 text-orange-500" />}>
+                  <div className="space-y-4">
+                    <label className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-3 text-sm">
+                      <span>{t("settings.codexBridgeEnable")}</span>
+                      <input type="checkbox" checked={codexBridgeEnabled} onChange={(e) => setCodexBridgeEnabled(e.target.checked)} />
+                    </label>
+                    <Field label={t("settings.codexBridgePort")}>
+                      <input value={codexPort} onChange={(e) => setCodexPort(e.target.value)} className="settings-input" />
+                    </Field>
+                    <div className="rounded-lg border border-border bg-background px-3 py-3 text-xs text-muted-foreground">
+                      {t("settings.codexBridgeHint")}
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={saveCodex}
+                        disabled={savingCodex}
+                        className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-40"
+                      >
+                        {savingCodex ? "..." : t("common.save")}
+                      </button>
+                    </div>
+                  </div>
+                </SettingsCard>
+              )}
+
+              {activeSection === "integrations" && (
+                <SettingsCard title={locale === "cs" ? "Integrace" : "Integrations"} icon={<PlugZap className="h-4 w-4 text-blue-500" />}>
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    <CheckRow label={t("contextMenu.openInVsCode")} />
+                    <CheckRow label={t("settings.integrationAiApi")} />
+                    <CheckRow label={t("settings.integrationCodexBridge")} />
+                  </div>
+                </SettingsCard>
+              )}
+
+              {activeSection === "license" && (
+                <SettingsCard title={t("settings.license")} icon={<ShieldCheck className="h-4 w-4 text-lime-600" />}>
+                  {isActivated ? (
+                    <div className="rounded-lg border border-green-600/20 bg-green-500/10 px-4 py-3">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-green-600 dark:text-green-400">
+                        <CheckCircle2 className="h-4 w-4" />
+                        {t("settings.fullVersionActivated")}
+                      </div>
+                      {licenseKey && <p className="mt-2 font-mono text-[10px] text-muted-foreground">{licenseKey.slice(0, 24)}...</p>}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <input
+                          value={activationCode}
+                          onChange={(e) => setActivationCode(e.target.value)}
+                          placeholder="XXXX-LIFE-XXXX-XXXX"
+                          className="settings-input font-mono"
+                          onKeyDown={(e) => e.key === "Enter" && handleActivate()}
+                        />
+                        <button
+                          onClick={() => handleActivate()}
+                          disabled={!activationCode.trim() || activating}
+                          className="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-40"
+                        >
+                          {activating ? "..." : t("settings.activate")}
+                        </button>
+                      </div>
+                      {activationError && <p className="text-xs text-destructive">{activationError}</p>}
+                      {transferAvailable && (
+                        <button
+                          onClick={() => handleActivate(true)}
+                          disabled={!activationCode.trim() || activating}
+                          className="w-full rounded-lg border border-border bg-background px-4 py-2 text-xs font-semibold hover:bg-file-hover disabled:opacity-40"
+                        >
+                          {t("settings.licenseTransfer")}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </SettingsCard>
+              )}
+            </div>
+
+            <footer className="flex justify-end border-t border-border bg-panel-header px-6 py-4">
+              <button onClick={onClose} className="rounded-lg border border-border bg-background px-5 py-2 text-xs font-semibold hover:bg-file-hover">
+                {t("common.close")}
+              </button>
+            </footer>
+          </main>
         </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-function GroupLabel({ children }: { children: React.ReactNode }) {
+function SettingsCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <p className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-[0.8px] mb-2.5 pl-0.5">
+    <section className="rounded-xl border border-border bg-panel p-4 shadow-sm">
+      <div className="mb-4 flex items-center gap-2">
+        {icon}
+        <h5 className="text-sm font-semibold">{title}</h5>
+      </div>
       {children}
-    </p>
+    </section>
   );
 }
 
-function ThemeOption({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="space-y-1.5 text-xs font-semibold text-muted-foreground">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function ThemeOption({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
     <button
       onClick={onClick}
-      className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[12px] font-medium transition-all ${
-        active
-          ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
-          : "text-muted-foreground/50 hover:text-foreground hover:bg-background/50"
-      }`}
+      className={cn(
+        "flex items-center gap-3 rounded-xl border px-4 py-4 text-left transition-all",
+        active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background hover:bg-file-hover"
+      )}
     >
-      {children}
+      {icon}
+      <span className="text-sm font-semibold">{label}</span>
     </button>
+  );
+}
+
+function ContextMenuSettingsGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-lg border border-border bg-background">
+      <div className="border-b border-border px-3 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+        {title}
+      </div>
+      <div className="divide-y divide-border">{children}</div>
+    </section>
+  );
+}
+
+function ToggleRow({
+  label,
+  checked,
+  disabled,
+  note,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  note?: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className={cn("flex items-center justify-between gap-3 px-3 py-2.5 text-xs font-semibold", disabled && "opacity-55")}>
+      <span className="min-w-0">
+        <span className="block truncate">{label}</span>
+        {note && <span className="block text-[10px] font-normal text-muted-foreground">{note}</span>}
+      </span>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+    </label>
+  );
+}
+
+function CheckRow({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+      <CheckCircle2 className="h-4 w-4 text-success" />
+      <span>{label}</span>
+    </div>
   );
 }

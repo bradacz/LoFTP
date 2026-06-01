@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { open as openExternal } from "@tauri-apps/plugin-shell";
 import { HostingConfig, FileItem } from "@/types/ftp";
 import { HostingTabs } from "@/components/ftp/HostingTabs";
 import { HostingDialog } from "@/components/ftp/HostingDialog";
@@ -23,7 +25,6 @@ import { useLicense } from "@/hooks/useLicense";
 import { useTheme } from "@/hooks/useTheme";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { FunctionKeyBar } from "@/components/ftp/FunctionKeyBar";
-import { ContextMenu } from "@/components/ftp/ContextMenu";
 import { CompareBar } from "@/components/ftp/CompareBar";
 import { SearchDialog } from "@/components/ftp/SearchDialog";
 import { QuickViewPanel } from "@/components/ftp/QuickViewPanel";
@@ -31,10 +32,32 @@ import { EditorPanel } from "@/components/ftp/EditorPanel";
 import { PropertiesDialog } from "@/components/ftp/PropertiesDialog";
 import { InputDialog } from "@/components/ftp/InputDialog";
 import { ConfirmDialog } from "@/components/ftp/ConfirmDialog";
+import { AssistantResultDialog } from "@/components/ftp/AssistantResultDialog";
 import { useDirectoryCompare } from "@/hooks/useDirectoryCompare";
-import { archiveCreate } from "@/lib/tauri";
+import {
+  aiRunPrompt,
+  archiveCreate,
+  archiveExtract,
+  codexListHostings,
+  fsChecksum,
+  fsChmod,
+  fsCombineFiles,
+  fsCopy,
+  fsCopyDir,
+  fsDelete,
+  fsIsDir,
+  fsMkdir,
+  fsReadText,
+  fsRename,
+  fsSetModified,
+  fsSplitFile,
+  fsWriteText,
+  uiShowContextMenu,
+} from "@/lib/tauri";
 import { toast } from "@/components/ui/sonner";
 import { useI18n } from "@/i18n";
+import type { ContextMenuAction, ContextMenuActionPayload, ContextMenuPanel, NativeContextMenuItem } from "@/types/contextMenu";
+import { getContextMenuSettings } from "@/lib/contextMenuSettings";
 
 const Index = () => {
   const { t } = useI18n();
@@ -60,9 +83,32 @@ const Index = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [quickViewOpen, setQuickViewOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: FileItem; panel: "left" | "right" } | null>(null);
+  const contextMenuPayloadRef = useRef<{ id: string; file: FileItem; panel: ContextMenuPanel } | null>(null);
+  const contextActionHandlerRef = useRef<(payload: ContextMenuActionPayload) => void>(() => {});
   const [archiveCreateRequest, setArchiveCreateRequest] = useState<{ baseDir: string; sourcePaths: string[] } | null>(null);
   const [propsFile, setPropsFile] = useState<{ file: FileItem; path: string } | null>(null);
+  const [contextInput, setContextInput] = useState<{
+    action: ContextMenuAction;
+    panel: ContextMenuPanel;
+    file: FileItem;
+    title: string;
+    label: string;
+    defaultValue?: string;
+  } | null>(null);
+  const [contextConfirm, setContextConfirm] = useState<{
+    action: ContextMenuAction;
+    panel: ContextMenuPanel;
+    file: FileItem;
+    title: string;
+    message: string;
+    danger?: boolean;
+  } | null>(null);
+  const [assistantResult, setAssistantResult] = useState<{
+    type: "ai" | "codex";
+    title: string;
+    body: string;
+    loading: boolean;
+  } | null>(null);
 
   const leftSelection = useFileSelection();
   const rightSelection = useFileSelection();
@@ -265,6 +311,610 @@ const Index = () => {
     }
   };
 
+  const getFullPath = (panel: ContextMenuPanel, file: FileItem) => {
+    const pd = panel === "left" ? leftPanelData : rightPanelData;
+    return `${pd.path}/${file.name}`;
+  };
+
+  const runAiExplainFile = async (panel: ContextMenuPanel, file: FileItem) => {
+    const fullPath = getFullPath(panel, file);
+    const title = `${t("contextMenu.aiExplainFile")}: ${file.name}`;
+    setAssistantResult({ type: "ai", title, body: "", loading: true });
+    try {
+      const pd = getPanelData(panel);
+      if (pd.mode !== "local" || file.isDirectory) {
+        throw new Error(t("toasts.aiLocalTextOnly"));
+      }
+      const content = await fsReadText(fullPath, 80_000);
+      const result = await aiRunPrompt("Explain this file for a LoFTP user.", content.content);
+      setAssistantResult({ type: "ai", title, body: result.output, loading: false });
+    } catch (error) {
+      setAssistantResult({ type: "ai", title, body: String(error), loading: false });
+    }
+  };
+
+  const runCodexExplainFile = async (panel: ContextMenuPanel, file: FileItem) => {
+    const title = `${t("contextMenu.codexExplainFile")}: ${file.name}`;
+    setAssistantResult({ type: "codex", title, body: "", loading: true });
+    try {
+      const pd = getPanelData(panel);
+      const hostings = await codexListHostings();
+      const body = [
+        "Codex bridge context prepared.",
+        "",
+        `Panel: ${panel}`,
+        `Mode: ${pd.mode}`,
+        `Path: ${pd.path}`,
+        `Item: ${file.name}`,
+        `Saved hostings available to LoFTP: ${hostings.length}`,
+        "",
+        "Secrets are not exposed. FTP/SFTP credentials stay in LoFTP credential storage.",
+      ].join("\n");
+      setAssistantResult({ type: "codex", title, body, loading: false });
+    } catch (error) {
+      setAssistantResult({ type: "codex", title, body: String(error), loading: false });
+    }
+  };
+
+  const selectContextFile = (panel: ContextMenuPanel, file: FileItem) => {
+    setActivePanel(panel);
+    if (file.name === "..") return;
+    const pd = getPanelData(panel);
+    if (!pd.selection.selected.has(file.name)) {
+      pd.selection.setSelected(new Set([file.name]));
+    }
+  };
+
+  const getContextSelection = (panel: ContextMenuPanel, file: FileItem) => {
+    const pd = getPanelData(panel);
+    const selected = pd.selection.selected.has(file.name)
+      ? Array.from(pd.selection.selected)
+      : file.name === ".."
+        ? []
+        : [file.name];
+    return selected.filter((name) => name !== "..");
+  };
+
+  const copyLocalEntry = async (from: string, to: string, isDirectory: boolean) => {
+    if (isDirectory) await fsCopyDir(from, to);
+    else await fsCopy(from, to);
+  };
+
+  const copyLocalSelection = async (panel: ContextMenuPanel, file: FileItem, targetDir: string, move = false) => {
+    const pd = getPanelData(panel);
+    if (pd.mode !== "local") throw new Error(t("dialogs.localFilesOnly"));
+    const names = getContextSelection(panel, file);
+    for (const name of names) {
+      const source = `${pd.path}/${name}`;
+      const sourceItem = pd.files.find((item) => item.name === name);
+      await copyLocalEntry(source, `${targetDir}/${name}`, sourceItem?.isDirectory ?? false);
+      if (move) await fsDelete(source);
+    }
+    pd.refresh();
+  };
+
+  const saveContextClipboard = (panel: ContextMenuPanel, file: FileItem) => {
+    const pd = getPanelData(panel);
+    if (pd.mode !== "local") throw new Error(t("dialogs.localFilesOnly"));
+    const entries = getContextSelection(panel, file).map((name) => {
+      const sourceFile = pd.files.find((item) => item.name === name);
+      return {
+        path: `${pd.path}/${name}`,
+        isDirectory: sourceFile?.isDirectory ?? false,
+      };
+    });
+    localStorage.setItem("loftp.fileClipboard.v1", JSON.stringify(entries));
+    toast.success(t("contextMenu.copyFiles"), { description: `${entries.length}` });
+  };
+
+  const pasteContextClipboard = async (panel: ContextMenuPanel) => {
+    const pd = getPanelData(panel);
+    if (pd.mode !== "local") throw new Error(t("dialogs.localPanelOnly"));
+    const raw = localStorage.getItem("loftp.fileClipboard.v1");
+    const parsed = raw ? JSON.parse(raw) as Array<string | { path: string; isDirectory?: boolean }> : [];
+    for (const entry of parsed) {
+      const source = typeof entry === "string" ? entry : entry.path;
+      const name = source.split("/").filter(Boolean).pop();
+      if (!name) continue;
+      const isDirectory = typeof entry === "string" ? await fsIsDir(source) : Boolean(entry.isDirectory);
+      await copyLocalEntry(source, `${pd.path}/${name}`, isDirectory);
+    }
+    pd.refresh();
+  };
+
+  const requestContextInput = (action: ContextMenuAction, panel: ContextMenuPanel, file: FileItem, title: string, label: string, defaultValue = "") => {
+    setContextInput({ action, panel, file, title, label, defaultValue });
+  };
+
+  const requestContextConfirm = (action: ContextMenuAction, panel: ContextMenuPanel, file: FileItem, title: string, message: string, danger = false) => {
+    setContextConfirm({ action, panel, file, title, message, danger });
+  };
+
+  const renameInPanel = async (panel: ContextMenuPanel, file: FileItem, newName: string) => {
+    const pd = getPanelData(panel);
+    const oldName = file.name;
+    if (!newName || newName === oldName) return;
+    if (pd.mode === "remote") {
+      if (!activeHost || connection.getStatus(activeHost.id) !== "connected") throw new Error(t("dialogs.remoteNotConnected"));
+      await connection.renameRemote(activeHost.id, `${pd.path}/${oldName}`, `${pd.path}/${newName}`, activeHost.protocol);
+    } else {
+      await fsRename(`${pd.path}/${oldName}`, `${pd.path}/${newName}`);
+    }
+    pd.selection.clear();
+    pd.refresh();
+  };
+
+  const createFolderInPanel = async (panel: ContextMenuPanel, name: string) => {
+    const pd = getPanelData(panel);
+    if (pd.mode === "remote") {
+      if (!activeHost || connection.getStatus(activeHost.id) !== "connected") throw new Error(t("dialogs.remoteNotConnected"));
+      await connection.mkdirRemote(activeHost.id, `${pd.path}/${name}`, activeHost.protocol);
+    } else {
+      await fsMkdir(`${pd.path}/${name}`);
+    }
+    pd.refresh();
+  };
+
+  const deleteSelectionInPanel = async (panel: ContextMenuPanel, file: FileItem) => {
+    const pd = getPanelData(panel);
+    const names = getContextSelection(panel, file);
+    for (const name of names) {
+      if (pd.mode === "remote") {
+        if (!activeHost || connection.getStatus(activeHost.id) !== "connected") throw new Error(t("dialogs.remoteNotConnected"));
+        const item = pd.files.find((entry) => entry.name === name);
+        await connection.deleteRemote(activeHost.id, `${pd.path}/${name}`, item?.isDirectory ?? false, activeHost.protocol);
+      } else {
+        await fsDelete(`${pd.path}/${name}`);
+      }
+    }
+    pd.selection.clear();
+    pd.refresh();
+  };
+
+  const handleContextConfirm = async () => {
+    if (!contextConfirm) return;
+    const { action, panel, file } = contextConfirm;
+    setContextConfirm(null);
+    try {
+      if (action === "delete") {
+        await deleteSelectionInPanel(panel, file);
+      }
+    } catch (error) {
+      toast.error(String(error));
+    }
+  };
+
+  const handleContextInputConfirm = async (value: string) => {
+    if (!contextInput) return;
+    const { action, panel, file } = contextInput;
+    const pd = getPanelData(panel);
+    const fullPath = getFullPath(panel, file);
+    setContextInput(null);
+
+    try {
+      if (action === "copyTo") {
+        await copyLocalSelection(panel, file, value, false);
+        return;
+      }
+      if (action === "moveTo") {
+        await copyLocalSelection(panel, file, value, true);
+        return;
+      }
+      if (action === "extractTo") {
+        await archiveExtract(fullPath, value);
+        pd.refresh();
+        return;
+      }
+      if (action === "chmod") {
+        await fsChmod(fullPath, value);
+        pd.refresh();
+        return;
+      }
+      if (action === "changeDate") {
+        await fsSetModified(fullPath, value);
+        pd.refresh();
+        return;
+      }
+      if (action === "calculateChecksum") {
+        const checksum = await fsChecksum(fullPath, value || "sha256");
+        setAssistantResult({ type: "ai", title: t("dialogs.checksumTitle"), body: checksum, loading: false });
+        return;
+      }
+      if (action === "batchRename") {
+        const names = getContextSelection(panel, file).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        const planned = names.map((name, index) => {
+          const extension = name.includes(".") ? `.${name.split(".").pop()}` : "";
+          return `${value}${index + 1}${extension}`;
+        });
+        const collisions = planned.filter((name) => pd.files.some((item) => item.name === name) && !names.includes(name));
+        if (collisions.length > 0) {
+          throw new Error(`Rename target already exists: ${collisions[0]}`);
+        }
+        for (const [index, name] of names.entries()) {
+          const extension = name.includes(".") ? `.${name.split(".").pop()}` : "";
+          await fsRename(`${pd.path}/${name}`, `${pd.path}/${value}${index + 1}${extension}`);
+        }
+        pd.refresh();
+        return;
+      }
+      if (action === "newFile") {
+        await fsWriteText(`${pd.path}/${value}`, "");
+        pd.refresh();
+        return;
+      }
+      if (action === "splitFile") {
+        const megabytes = Number.parseInt(value, 10);
+        await fsSplitFile(fullPath, Math.max(1, megabytes || 10) * 1024 * 1024);
+        pd.refresh();
+        return;
+      }
+      if (action === "combineFiles") {
+        const parts = getContextSelection(panel, file)
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+          .map((name) => `${pd.path}/${name}`);
+        await fsCombineFiles(parts, `${pd.path}/${value}`);
+        pd.refresh();
+        return;
+      }
+      if (action === "selectByExtension") {
+        const normalized = value.startsWith(".") ? value.toLowerCase() : `.${value.toLowerCase()}`;
+        pd.selection.setSelected(new Set(pd.files.filter((item) => item.name.toLowerCase().endsWith(normalized)).map((item) => item.name)));
+        return;
+      }
+      if (action === "selectByPattern") {
+        pd.selection.selectByPattern(value, pd.files);
+      }
+      if (action === "rename") {
+        await renameInPanel(panel, file, value);
+      }
+      if (action === "newFolder") {
+        await createFolderInPanel(panel, value);
+      }
+    } catch (error) {
+      toast.error(String(error));
+    }
+  };
+
+  const performContextMenuAction = (action: ContextMenuAction, panel: ContextMenuPanel, file: FileItem) => {
+    const pd = panel === "left" ? leftPanelData : rightPanelData;
+
+    if (action === "copyPath") {
+      navigator.clipboard.writeText(getFullPath(panel, file));
+      return;
+    }
+    if (action === "copyName") {
+      navigator.clipboard.writeText(file.name);
+      return;
+    }
+    if (action === "copyBaseName") {
+      navigator.clipboard.writeText(file.name.replace(/\.[^/.]+$/, ""));
+      return;
+    }
+    if (action === "copyFiles") {
+      saveContextClipboard(panel, file);
+      return;
+    }
+    if (action === "pasteFiles") {
+      pasteContextClipboard(panel).catch((error) => toast.error(String(error)));
+      return;
+    }
+    if (action === "openInFinder" && pd.mode === "local") {
+      openExternal(getFullPath(panel, file)).catch(() => {});
+      return;
+    }
+    if (action === "openInVSCode" && pd.mode === "local") {
+      const encodedPath = encodeURI(getFullPath(panel, file));
+      openExternal(`vscode://file${encodedPath}`).catch(() => {});
+      return;
+    }
+    if ((action === "openNatively" || action === "openWith") && pd.mode === "local") {
+      const targetPath = getFullPath(panel, file);
+      if (action === "openWith") {
+        openExternal(`file://${targetPath}`).catch(() => openExternal(targetPath).catch(() => {}));
+      } else {
+        openExternal(targetPath).catch(() => {});
+      }
+      return;
+    }
+    if (action === "openArchive" || action === "openAsArchive") {
+      handleOpenArchive(panel, file.name);
+      return;
+    }
+    if (action === "createArchive") {
+      handleCreateArchiveRequest(panel, getPanelData(panel).selection.selected.has(file.name) ? undefined : [file.name]);
+      return;
+    }
+    if (action === "extractHere") {
+      archiveExtract(getFullPath(panel, file), pd.path).then(pd.refresh).catch((error) => toast.error(String(error)));
+      return;
+    }
+    if (action === "extractTo") {
+      requestContextInput(action, panel, file, t("contextMenu.extractTo"), t("dialogs.targetFolder"), pd.path);
+      return;
+    }
+    if (action === "copyTo") {
+      requestContextInput(action, panel, file, t("contextMenu.copyTo"), t("dialogs.targetFolder"), pd.path);
+      return;
+    }
+    if (action === "moveTo") {
+      requestContextInput(action, panel, file, t("contextMenu.moveTo"), t("dialogs.targetFolder"), pd.path);
+      return;
+    }
+    if (action === "chmod") {
+      requestContextInput(action, panel, file, t("contextMenu.chmod"), t("dialogs.chmodOctal"), "755");
+      return;
+    }
+    if (action === "changeDate") {
+      requestContextInput(action, panel, file, t("contextMenu.changeDate"), t("dialogs.changeDateLabel"), file.modified || "2026-05-31 12:00");
+      return;
+    }
+    if (action === "calculateChecksum") {
+      requestContextInput(action, panel, file, t("contextMenu.calculateChecksum"), t("dialogs.checksumAlgorithm"), "sha256");
+      return;
+    }
+    if (action === "batchRename") {
+      requestContextInput(action, panel, file, t("contextMenu.batchRename"), t("dialogs.batchRenamePrefix"), "file-");
+      return;
+    }
+    if (action === "newFile") {
+      requestContextInput(action, panel, file, t("contextMenu.newFile"), t("contextMenu.newFile"), "new-file.txt");
+      return;
+    }
+    if (action === "newFolder") {
+      requestContextInput(action, panel, file, t("contextMenu.newFolder"), t("dialogs.newFolderLabel"), "New Folder");
+      return;
+    }
+    if (action === "selectAll") {
+      pd.selection.setSelected(new Set(pd.files.filter((item) => item.name !== "..").map((item) => item.name)));
+      return;
+    }
+    if (action === "deselectAll") {
+      pd.selection.clear();
+      return;
+    }
+    if (action === "invertSelection") {
+      const all = pd.files.filter((item) => item.name !== "..").map((item) => item.name);
+      pd.selection.setSelected(new Set(all.filter((name) => !pd.selection.selected.has(name))));
+      return;
+    }
+    if (action === "selectByExtension") {
+      requestContextInput(action, panel, file, t("contextMenu.selectByExtension"), t("contextMenu.selectByExtension"), ".txt");
+      return;
+    }
+    if (action === "selectByPattern") {
+      requestContextInput(action, panel, file, t("contextMenu.selectByPattern"), t("contextMenu.selectByPattern"), "*.txt");
+      return;
+    }
+    if (action === "splitFile") {
+      requestContextInput(action, panel, file, t("contextMenu.splitFile"), t("dialogs.splitChunkSizeMb"), "10");
+      return;
+    }
+    if (action === "combineFiles") {
+      requestContextInput(action, panel, file, t("contextMenu.combineFiles"), t("dialogs.combineOutputFile"), "combined.bin");
+      return;
+    }
+    if (action === "compareFolders") {
+      if (dirCompare.isComparing) dirCompare.stop();
+      else dirCompare.compare(leftPanelData.files, rightPanelData.files);
+      return;
+    }
+    if (action === "refresh") {
+      fileActions.refresh();
+      return;
+    }
+    if (action === "search") {
+      setActivePanel(panel);
+      setSearchOpen(true);
+      return;
+    }
+    if (action === "aiExplainFile") {
+      runAiExplainFile(panel, file);
+      return;
+    }
+    if (action === "codexExplainFile") {
+      runCodexExplainFile(panel, file);
+      return;
+    }
+    if (action === "properties") {
+      setPropsFile({ file, path: getFullPath(panel, file) });
+      return;
+    }
+    if (action === "rename") {
+      requestContextInput(action, panel, file, t("contextMenu.rename"), t("dialogs.renameLabel"), file.name);
+      return;
+    }
+    if (action === "delete") {
+      requestContextConfirm(
+        action,
+        panel,
+        file,
+        t("dialogs.deleteTitle"),
+        t("dialogs.deleteMessage", { count: getContextSelection(panel, file).length }),
+        true
+      );
+    }
+  };
+
+  contextActionHandlerRef.current = (payload: ContextMenuActionPayload) => {
+    const current = contextMenuPayloadRef.current;
+    if (!current || current.id !== payload.id) return;
+    performContextMenuAction(payload.action, current.panel, current.file);
+    contextMenuPayloadRef.current = null;
+  };
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    listen<ContextMenuActionPayload>("loftp-context-menu-action", (event) => {
+      contextActionHandlerRef.current(event.payload);
+    })
+      .then((nextUnlisten) => {
+        unlisten = nextUnlisten;
+      })
+      .catch(() => {});
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
+  const openSystemContextMenu = async (panel: ContextMenuPanel, file: FileItem, event: React.MouseEvent) => {
+    const panelData = getPanelData(panel);
+    setActivePanel(panel);
+    if (file.name !== ".." && !panelData.selection.selected.has(file.name)) {
+      panelData.selection.setSelected(new Set([file.name]));
+    }
+
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const menuSettings = getContextMenuSettings();
+    const shortcut = (value: string) => menuSettings.showShortcuts ? value : undefined;
+    const enabled = (action: ContextMenuAction) => menuSettings.actions[action];
+    const items: NativeContextMenuItem[] = [];
+
+    if (enabled("copyPath")) {
+      items.push({ action: "copyPath", label: t("contextMenu.copyPath"), shortcut: shortcut("Cmd+Shift+C") });
+    }
+
+    if (enabled("copyName")) {
+      items.push({ action: "copyName", label: t("contextMenu.copyName") });
+    }
+
+    if (enabled("copyBaseName") && file.name !== "..") {
+      items.push({ action: "copyBaseName", label: t("contextMenu.copyBaseName") });
+    }
+
+    if (enabled("copyFiles") && file.name !== "..") {
+      items.push({ action: "copyFiles", label: t("contextMenu.copyFiles"), shortcut: shortcut("F5") });
+    }
+    if (enabled("pasteFiles") && panelData.mode === "local") {
+      items.push({ action: "pasteFiles", label: t("contextMenu.pasteFiles") });
+    }
+
+    if (panelData.mode === "local") {
+      if (enabled("openInFinder")) {
+        items.push({ action: "openInFinder", label: t("contextMenu.openInFinder"), shortcut: shortcut("Cmd+O") });
+      }
+      if (enabled("openInVSCode")) {
+        items.push({ action: "openInVSCode", label: t("contextMenu.openInVsCode") });
+      }
+      if (enabled("openNatively")) {
+        items.push({ action: "openNatively", label: t("contextMenu.openNatively") });
+      }
+      if (enabled("openWith")) {
+        items.push({ action: "openWith", label: t("contextMenu.openWith") });
+      }
+    }
+
+    if (file.name !== "..") {
+      if (enabled("aiExplainFile")) {
+        items.push({ action: "aiExplainFile", label: t("contextMenu.aiExplainFile") });
+      }
+      if (enabled("codexExplainFile")) {
+        items.push({ action: "codexExplainFile", label: t("contextMenu.codexExplainFile") });
+      }
+    }
+
+    if (enabled("openAsArchive") && resolveArchivePath(panel, file.name)) {
+      items.push({ action: "openAsArchive", label: t("contextMenu.openAsArchive") });
+    }
+    if (enabled("openArchive") && resolveArchivePath(panel, file.name)) {
+      items.push({ action: "openArchive", label: t("contextMenu.openArchive") });
+    }
+
+    if (enabled("createArchive") && panelData.mode === "local" && file.name !== "..") {
+      items.push({ action: "createArchive", label: t("contextMenu.createArchive") });
+    }
+    if (enabled("extractHere") && panelData.mode === "local" && resolveArchivePath(panel, file.name)) {
+      items.push({ action: "extractHere", label: t("contextMenu.extractHere") });
+    }
+    if (enabled("extractTo") && panelData.mode === "local" && resolveArchivePath(panel, file.name)) {
+      items.push({ action: "extractTo", label: t("contextMenu.extractTo") });
+    }
+
+    if (enabled("copyTo") && panelData.mode === "local" && file.name !== "..") {
+      items.push({ action: "copyTo", label: t("contextMenu.copyTo") });
+    }
+    if (enabled("moveTo") && panelData.mode === "local" && file.name !== "..") {
+      items.push({ action: "moveTo", label: t("contextMenu.moveTo") });
+    }
+    if (enabled("newFile") && panelData.mode === "local") {
+      items.push({ action: "newFile", label: t("contextMenu.newFile") });
+    }
+    if (enabled("newFolder")) {
+      items.push({ action: "newFolder", label: t("contextMenu.newFolder"), shortcut: shortcut("F7") });
+    }
+    if (enabled("selectAll")) {
+      items.push({ action: "selectAll", label: t("contextMenu.selectAll") });
+    }
+    if (enabled("deselectAll")) {
+      items.push({ action: "deselectAll", label: t("contextMenu.deselectAll") });
+    }
+    if (enabled("invertSelection")) {
+      items.push({ action: "invertSelection", label: t("contextMenu.invertSelection") });
+    }
+    if (enabled("selectByExtension")) {
+      items.push({ action: "selectByExtension", label: t("contextMenu.selectByExtension") });
+    }
+    if (enabled("selectByPattern")) {
+      items.push({ action: "selectByPattern", label: t("contextMenu.selectByPattern") });
+    }
+    if (enabled("compareFolders")) {
+      items.push({ action: "compareFolders", label: t("contextMenu.compareFolders") });
+    }
+    if (enabled("refresh")) {
+      items.push({ action: "refresh", label: t("contextMenu.refresh") });
+    }
+    if (enabled("search")) {
+      items.push({ action: "search", label: t("contextMenu.search") });
+    }
+
+    if (enabled("properties")) {
+      items.push({ action: "properties", label: t("contextMenu.properties") });
+    }
+    if (enabled("chmod") && panelData.mode === "local" && file.name !== "..") {
+      items.push({ action: "chmod", label: t("contextMenu.chmod") });
+    }
+    if (enabled("changeDate") && panelData.mode === "local" && file.name !== "..") {
+      items.push({ action: "changeDate", label: t("contextMenu.changeDate") });
+    }
+    if (enabled("calculateChecksum") && panelData.mode === "local" && !file.isDirectory) {
+      items.push({ action: "calculateChecksum", label: t("contextMenu.calculateChecksum") });
+    }
+    if (enabled("batchRename") && panelData.mode === "local" && file.name !== "..") {
+      items.push({ action: "batchRename", label: t("contextMenu.batchRename") });
+    }
+    if (enabled("splitFile") && panelData.mode === "local" && !file.isDirectory) {
+      items.push({ action: "splitFile", label: t("contextMenu.splitFile") });
+    }
+    if (enabled("combineFiles") && panelData.mode === "local" && getContextSelection(panel, file).length > 1) {
+      items.push({ action: "combineFiles", label: t("contextMenu.combineFiles") });
+    }
+    if (enabled("rename")) {
+      items.push({ action: "rename", label: t("contextMenu.rename"), shortcut: shortcut("F6") });
+    }
+    if (enabled("delete")) {
+      items.push({ action: "delete", label: t("contextMenu.delete"), shortcut: shortcut("F8") });
+    }
+    if (items.length === 0) {
+      toast.error(t("toasts.contextMenuNoItems"));
+      return;
+    }
+
+    contextMenuPayloadRef.current = { id, file, panel };
+
+    try {
+      await uiShowContextMenu({
+        id,
+        items,
+        x: event.clientX,
+        y: event.clientY,
+      });
+    } catch (error) {
+      contextMenuPayloadRef.current = null;
+      toast.error(t("toasts.contextMenuOpenFailed"), { description: String(error) });
+    }
+  };
+
   const canOpenArchive = !!resolveArchivePath(activePanel);
   const canCreateArchive = !!getArchiveSelection(activePanel);
 
@@ -438,7 +1088,7 @@ const Index = () => {
             onRangeSelect={getLeftSelection().rangeSelect}
             onUpdateLastClicked={getLeftSelection().updateLastClicked}
             onDoubleClick={(file) => handleDoubleClick("left", file)}
-            onContextMenu={(e, file) => setContextMenu({ x: e.clientX, y: e.clientY, file, panel: "left" })}
+            onContextMenu={(event, file) => openSystemContextMenu("left", file, event)}
             onDrop={(fileNames) => transferFlow.dropOnPanel("left", fileNames)}
             panelId="left"
             isFocused={activePanel === "left"}
@@ -494,7 +1144,7 @@ const Index = () => {
               onRangeSelect={getRightSelection().rangeSelect}
               onUpdateLastClicked={getRightSelection().updateLastClicked}
               onDoubleClick={(file) => handleDoubleClick("right", file)}
-              onContextMenu={(e, file) => setContextMenu({ x: e.clientX, y: e.clientY, file, panel: "right" })}
+              onContextMenu={(event, file) => openSystemContextMenu("right", file, event)}
               onDrop={(fileNames) => transferFlow.dropOnPanel("right", fileNames)}
               panelId="right"
               isFocused={activePanel === "right"}
@@ -538,54 +1188,6 @@ const Index = () => {
         />
       )}
 
-      {/* Context menu */}
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          file={contextMenu.file}
-          panelType={contextMenu.panel === "left" ? (leftMode === "local" ? "local" : "remote") : (rightMode === "local" ? "local" : "remote")}
-          onClose={() => setContextMenu(null)}
-          onCopyPath={() => {
-            const pd = contextMenu.panel === "left" ? leftPanelData : rightPanelData;
-            navigator.clipboard.writeText(`${pd.path}/${contextMenu.file.name}`);
-          }}
-          onCopyName={() => navigator.clipboard.writeText(contextMenu.file.name)}
-          onOpenInFinder={() => {
-            const pd = contextMenu.panel === "left" ? leftPanelData : rightPanelData;
-            if (pd.mode === "local") {
-              import("@tauri-apps/plugin-shell").then(({ open }) => {
-                open(`${pd.path}/${contextMenu.file.name}`);
-              }).catch(() => {});
-            }
-          }}
-          onOpenInVSCode={() => {
-            const pd = contextMenu.panel === "left" ? leftPanelData : rightPanelData;
-            if (pd.mode === "local") {
-              const fullPath = `${pd.path}/${contextMenu.file.name}`;
-              import("@tauri-apps/plugin-shell").then(({ open }) => {
-                open(`vscode://file${fullPath}`);
-              }).catch(() => {});
-            }
-          }}
-          onOpenArchive={() => handleOpenArchive(contextMenu.panel, contextMenu.file.name)}
-          canOpenArchive={contextMenu.panel === "left" || contextMenu.panel === "right" ? !!resolveArchivePath(contextMenu.panel, contextMenu.file.name) : false}
-          onCreateArchive={() => handleCreateArchiveRequest(
-            contextMenu.panel,
-            getPanelData(contextMenu.panel).selection.selected.has(contextMenu.file.name)
-              ? undefined
-              : [contextMenu.file.name]
-          )}
-          canCreateArchive={getPanelData(contextMenu.panel).mode === "local" && contextMenu.file.name !== ".."}
-          onProperties={() => {
-            const pd = contextMenu.panel === "left" ? leftPanelData : rightPanelData;
-            setPropsFile({ file: contextMenu.file, path: `${pd.path}/${contextMenu.file.name}` });
-          }}
-          onRename={() => fileActions.rename()}
-          onDelete={() => fileActions.remove()}
-        />
-      )}
-
       {/* Editor */}
       <EditorPanel
         open={editorOpen}
@@ -618,6 +1220,15 @@ const Index = () => {
         fullPath={propsFile?.path ?? ""}
       />
 
+      <AssistantResultDialog
+        open={!!assistantResult}
+        type={assistantResult?.type ?? "ai"}
+        title={assistantResult?.title ?? ""}
+        body={assistantResult?.body ?? ""}
+        loading={assistantResult?.loading}
+        onClose={() => setAssistantResult(null)}
+      />
+
       {/* Input/Confirm dialogs for file actions */}
       <InputDialog
         open={fileActions.pendingAction?.type === "mkdir"}
@@ -642,6 +1253,14 @@ const Index = () => {
         onConfirm={handleCreateArchiveConfirm}
         onCancel={() => setArchiveCreateRequest(null)}
       />
+      <InputDialog
+        open={!!contextInput}
+        title={contextInput?.title ?? ""}
+        label={contextInput?.label ?? ""}
+        defaultValue={contextInput?.defaultValue ?? ""}
+        onConfirm={handleContextInputConfirm}
+        onCancel={() => setContextInput(null)}
+      />
       <ConfirmDialog
         open={fileActions.pendingAction?.type === "delete"}
         title={t("dialogs.deleteTitle")}
@@ -650,6 +1269,15 @@ const Index = () => {
         danger
         onConfirm={fileActions.confirmDelete}
         onCancel={fileActions.cancelAction}
+      />
+      <ConfirmDialog
+        open={!!contextConfirm}
+        title={contextConfirm?.title ?? ""}
+        message={contextConfirm?.message ?? ""}
+        confirmLabel={t("common.delete")}
+        danger={contextConfirm?.danger}
+        onConfirm={handleContextConfirm}
+        onCancel={() => setContextConfirm(null)}
       />
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} theme={themeCtx.theme} onThemeChange={themeCtx.setTheme} />

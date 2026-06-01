@@ -1,4 +1,6 @@
+pub mod ai;
 pub mod archive;
+pub mod codex;
 pub mod filesystem;
 pub mod ftp;
 pub mod hosting;
@@ -6,5 +8,6 @@ pub mod license;
 pub mod purchase;
 pub mod search;
 pub mod sftp;
+pub mod ui;
 pub mod updater;
 pub mod viewer;

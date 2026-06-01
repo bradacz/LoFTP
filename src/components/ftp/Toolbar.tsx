@@ -1,4 +1,19 @@
-import { Plus, RefreshCw, Upload, Download, Trash2, FolderPlus, Unplug, Info, Settings, PenLine, Search, ArrowRightLeft, PackageOpen, FileArchive } from "lucide-react";
+import {
+  RiAddLine,
+  RiArchive2Fill,
+  RiArrowLeftRightLine,
+  RiDeleteBin6Fill,
+  RiDownloadCloud2Fill,
+  RiEdit2Fill,
+  RiFileZipFill,
+  RiFolderAddFill,
+  RiInformation2Fill,
+  RiPlug2Line,
+  RiRefreshLine,
+  RiSearch2Line,
+  RiSettings3Fill,
+  RiUploadCloud2Fill,
+} from "@remixicon/react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
@@ -24,6 +39,8 @@ interface ToolbarProps {
   isComparing?: boolean;
 }
 
+const toolbarIconClassName = "h-4 w-4";
+
 export function Toolbar({
   onNewHosting,
   onRefresh,
@@ -48,10 +65,10 @@ export function Toolbar({
 
   return (
     <div className="flex items-center gap-1 px-2 py-1.5 bg-toolbar border-b border-toolbar-border">
-      <ToolbarIconButton icon={<Plus className="h-3.5 w-3.5" />} label={t("toolbar.newConnection")} onClick={onNewHosting} variant="outline" />
-      <ToolbarIconButton icon={<RefreshCw className="h-3.5 w-3.5" />} label={t("toolbar.refresh")} onClick={onRefresh} />
+      <ToolbarIconButton icon={<RiAddLine className={toolbarIconClassName} />} label={t("toolbar.newConnection")} onClick={onNewHosting} variant="outline" />
+      <ToolbarIconButton icon={<RiRefreshLine className={toolbarIconClassName} />} label={t("toolbar.refresh")} onClick={onRefresh} />
       <ToolbarIconButton
-        icon={<Unplug className="h-3.5 w-3.5" />}
+        icon={<RiPlug2Line className={toolbarIconClassName} />}
         label={t("toolbar.disconnect")}
         onClick={onDisconnect}
         className="text-destructive hover:text-destructive"
@@ -59,15 +76,15 @@ export function Toolbar({
 
       <div className="w-px h-5 bg-divider mx-1" />
 
-      <ToolbarIconButton icon={<Upload className="h-3.5 w-3.5" />} label={t("toolbar.upload")} onClick={onUpload} disabled={!hasSelection} />
-      <ToolbarIconButton icon={<Download className="h-3.5 w-3.5" />} label={t("toolbar.download")} onClick={onDownload} disabled={!hasSelection} />
+      <ToolbarIconButton icon={<RiUploadCloud2Fill className={toolbarIconClassName} />} label={t("toolbar.upload")} onClick={onUpload} disabled={!hasSelection} />
+      <ToolbarIconButton icon={<RiDownloadCloud2Fill className={toolbarIconClassName} />} label={t("toolbar.download")} onClick={onDownload} disabled={!hasSelection} />
 
       <div className="w-px h-5 bg-divider mx-1" />
 
-      <ToolbarIconButton icon={<FolderPlus className="h-3.5 w-3.5" />} label={t("toolbar.folder")} onClick={onNewFolder} />
-      <ToolbarIconButton icon={<PenLine className="h-3.5 w-3.5" />} label={t("toolbar.rename")} onClick={onRename} disabled={!hasSelection} />
+      <ToolbarIconButton icon={<RiFolderAddFill className={toolbarIconClassName} />} label={t("toolbar.folder")} onClick={onNewFolder} />
+      <ToolbarIconButton icon={<RiEdit2Fill className={toolbarIconClassName} />} label={t("toolbar.rename")} onClick={onRename} disabled={!hasSelection} />
       <ToolbarIconButton
-        icon={<Trash2 className="h-3.5 w-3.5" />}
+        icon={<RiDeleteBin6Fill className={toolbarIconClassName} />}
         label={t("toolbar.delete")}
         onClick={onDelete}
         disabled={!hasSelection}
@@ -76,9 +93,9 @@ export function Toolbar({
 
       <div className="w-px h-5 bg-divider mx-1" />
 
-      <ToolbarIconButton icon={<Search className="h-3.5 w-3.5" />} label={t("toolbar.search")} onClick={onSearch} />
+      <ToolbarIconButton icon={<RiSearch2Line className={toolbarIconClassName} />} label={t("toolbar.search")} onClick={onSearch} />
       <ToolbarIconButton
-        icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
+        icon={<RiArrowLeftRightLine className={toolbarIconClassName} />}
         label={t("toolbar.compare")}
         onClick={onCompare}
         variant={isComparing ? "default" : "ghost"}
@@ -87,13 +104,13 @@ export function Toolbar({
       <div className="w-px h-5 bg-divider mx-1" />
 
       <ToolbarIconButton
-        icon={<PackageOpen className="h-3.5 w-3.5" />}
+        icon={<RiArchive2Fill className={toolbarIconClassName} />}
         label={t("toolbar.openArchive")}
         onClick={onOpenArchive}
         disabled={!canOpenArchive}
       />
       <ToolbarIconButton
-        icon={<FileArchive className="h-3.5 w-3.5" />}
+        icon={<RiFileZipFill className={toolbarIconClassName} />}
         label={t("toolbar.createArchive")}
         onClick={onCreateArchive}
         disabled={!canCreateArchive}
@@ -101,8 +118,8 @@ export function Toolbar({
 
       <div className="flex-1" />
 
-      <ToolbarIconButton icon={<Settings className="h-3.5 w-3.5" />} label={t("toolbar.settings")} onClick={onSettings} />
-      <ToolbarIconButton icon={<Info className="h-3.5 w-3.5" />} label={t("toolbar.about")} onClick={onAbout} />
+      <ToolbarIconButton icon={<RiSettings3Fill className={toolbarIconClassName} />} label={t("toolbar.settings")} onClick={onSettings} />
+      <ToolbarIconButton icon={<RiInformation2Fill className={toolbarIconClassName} />} label={t("toolbar.about")} onClick={onAbout} />
     </div>
   );
 }

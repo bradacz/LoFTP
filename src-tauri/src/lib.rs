@@ -17,15 +17,24 @@ pub fn run() {
         .manage(SftpState::new())
         .manage(PendingUpdateState::new())
         .manage(CancellationState::new())
+        .on_menu_event(|app, event| {
+            commands::ui::handle_menu_event(app, event.id().as_ref());
+        })
         .invoke_handler(tauri::generate_handler![
             // Filesystem
             commands::filesystem::fs_list,
             commands::filesystem::fs_get_home,
             commands::filesystem::fs_mkdir,
             commands::filesystem::fs_delete,
+            commands::filesystem::fs_is_dir,
             commands::filesystem::fs_rename,
             commands::filesystem::fs_copy,
             commands::filesystem::fs_copy_dir,
+            commands::filesystem::fs_chmod,
+            commands::filesystem::fs_set_modified,
+            commands::filesystem::fs_checksum,
+            commands::filesystem::fs_split_file,
+            commands::filesystem::fs_combine_files,
             commands::filesystem::fs_list_volumes,
             commands::filesystem::fs_list_cloud_storages,
             // FTP
@@ -80,6 +89,18 @@ pub fn run() {
             commands::viewer::fs_read_text,
             commands::viewer::fs_read_hex,
             commands::viewer::fs_write_text,
+            // AI
+            commands::ai::ai_get_settings,
+            commands::ai::ai_save_settings,
+            commands::ai::ai_delete_api_key,
+            commands::ai::ai_test_settings,
+            commands::ai::ai_run_prompt,
+            // Codex
+            commands::codex::codex_get_bridge_settings,
+            commands::codex::codex_save_bridge_settings,
+            commands::codex::codex_list_hostings,
+            // UI
+            commands::ui::ui_show_context_menu,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

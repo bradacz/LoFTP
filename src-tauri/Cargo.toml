@@ -5,6 +5,7 @@ description = "FTP/SFTP client for macOS"
 authors = ["LoFTP"]
 license = "MIT"
 edition = "2021"
+default-run = "loftp"
 
 [lib]
 name = "loftp_lib"

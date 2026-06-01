@@ -1,8 +1,12 @@
 use crate::models::file_item::FileItem;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read, Write};
 use std::path::Path;
+use std::process::Command;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 #[tauri::command]
 pub fn fs_list(path: String) -> Result<Vec<FileItem>, String> {
@@ -179,12 +183,12 @@ pub fn fs_mkdir(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn fs_delete(path: String) -> Result<(), String> {
-    let p = Path::new(&path);
-    if p.is_dir() {
-        fs::remove_dir_all(p).map_err(|e| format!("Delete dir failed: {}", e))
-    } else {
-        fs::remove_file(p).map_err(|e| format!("Delete file failed: {}", e))
-    }
+    trash::delete(&path).map_err(|e| format!("Move to trash failed: {}", e))
+}
+
+#[tauri::command]
+pub fn fs_is_dir(path: String) -> bool {
+    Path::new(&path).is_dir()
 }
 
 #[tauri::command]
@@ -212,6 +216,118 @@ pub fn fs_copy_dir(from: String, to: String) -> Result<(), String> {
         return Err(format!("Source not found: {}", from));
     }
     copy_dir_recursive(src, Path::new(&to))
+}
+
+#[tauri::command]
+pub fn fs_chmod(path: String, mode: String) -> Result<(), String> {
+    #[cfg(not(unix))]
+    {
+        let _ = (path, mode);
+        Err("Changing permissions is supported only on Unix platforms.".to_string())
+    }
+
+    #[cfg(unix)]
+    {
+        let parsed = u32::from_str_radix(mode.trim().trim_start_matches("0o"), 8)
+            .map_err(|_| "Invalid chmod mode. Use octal form, for example 755.".to_string())?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(parsed))
+            .map_err(|e| format!("Chmod failed: {}", e))
+    }
+}
+
+#[tauri::command]
+pub fn fs_set_modified(path: String, modified: String) -> Result<(), String> {
+    let parsed = chrono::NaiveDateTime::parse_from_str(modified.trim(), "%Y-%m-%d %H:%M")
+        .map_err(|_| "Invalid date. Use YYYY-MM-DD HH:MM.".to_string())?;
+    let touch_value = parsed.format("%Y%m%d%H%M.%S").to_string();
+    let status = Command::new("touch")
+        .args(["-t", &touch_value, &path])
+        .status()
+        .map_err(|e| format!("Unable to run touch: {}", e))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err("Change date failed.".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn fs_checksum(path: String, algorithm: String) -> Result<String, String> {
+    let mut file = fs::File::open(&path).map_err(|e| format!("Open failed: {}", e))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|e| format!("Read failed: {}", e))?;
+
+    match algorithm.trim().to_lowercase().as_str() {
+        "sha512" => {
+            use sha2::{Digest, Sha512};
+            let mut hasher = Sha512::new();
+            hasher.update(&bytes);
+            Ok(hex::encode(hasher.finalize()))
+        }
+        "sha256" | "" => {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            Ok(hex::encode(hasher.finalize()))
+        }
+        other => Err(format!("Unsupported checksum algorithm: {}", other)),
+    }
+}
+
+#[tauri::command]
+pub fn fs_split_file(path: String, chunk_size: u64) -> Result<(), String> {
+    if chunk_size == 0 {
+        return Err("Chunk size must be greater than zero.".to_string());
+    }
+
+    let mut input = fs::File::open(&path).map_err(|e| format!("Open failed: {}", e))?;
+    let mut index = 1_u32;
+    let mut buffer = vec![0_u8; 1024 * 1024];
+
+    loop {
+        let part_path = format!("{}.part{:03}", path, index);
+        let mut output = fs::File::create(&part_path).map_err(|e| format!("Create part failed: {}", e))?;
+        let mut written = 0_u64;
+
+        while written < chunk_size {
+            let max_read = (chunk_size - written).min(buffer.len() as u64) as usize;
+            let read = input
+                .read(&mut buffer[..max_read])
+                .map_err(|e| format!("Read failed: {}", e))?;
+            if read == 0 {
+                break;
+            }
+            output
+                .write_all(&buffer[..read])
+                .map_err(|e| format!("Write part failed: {}", e))?;
+            written += read as u64;
+        }
+
+        if written == 0 {
+            let _ = fs::remove_file(&part_path);
+            break;
+        }
+
+        index += 1;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn fs_combine_files(parts: Vec<String>, output_path: String) -> Result<(), String> {
+    if parts.is_empty() {
+        return Err("No input parts selected.".to_string());
+    }
+
+    let mut output = fs::File::create(&output_path).map_err(|e| format!("Create output failed: {}", e))?;
+    for part in parts {
+        let mut input = fs::File::open(&part).map_err(|e| format!("Open part failed: {}", e))?;
+        std::io::copy(&mut input, &mut output).map_err(|e| format!("Combine failed: {}", e))?;
+    }
+    Ok(())
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {

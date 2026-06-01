@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { HostingConfig, FileItem } from "@/types/ftp";
+import type { NativeContextMenuPayload } from "@/types/contextMenu";
 import type { LicenseStatus, PurchaseCheckout } from "@/types/license";
 import type { AvailableUpdate, UpdaterStatus } from "@/types/updater";
 
@@ -34,6 +35,10 @@ export async function fsDelete(path: string): Promise<void> {
   return invoke("fs_delete", { path });
 }
 
+export async function fsIsDir(path: string): Promise<boolean> {
+  return invoke("fs_is_dir", { path });
+}
+
 export async function fsRename(from: string, to: string): Promise<void> {
   return invoke("fs_rename", { from, to });
 }
@@ -44,6 +49,26 @@ export async function fsCopy(from: string, to: string): Promise<void> {
 
 export async function fsCopyDir(from: string, to: string): Promise<void> {
   return invoke("fs_copy_dir", { from, to });
+}
+
+export async function fsChmod(path: string, mode: string): Promise<void> {
+  return invoke("fs_chmod", { path, mode });
+}
+
+export async function fsSetModified(path: string, modified: string): Promise<void> {
+  return invoke("fs_set_modified", { path, modified });
+}
+
+export async function fsChecksum(path: string, algorithm: string): Promise<string> {
+  return invoke("fs_checksum", { path, algorithm });
+}
+
+export async function fsSplitFile(path: string, chunkSize: number): Promise<void> {
+  return invoke("fs_split_file", { path, chunkSize });
+}
+
+export async function fsCombineFiles(parts: string[], outputPath: string): Promise<void> {
+  return invoke("fs_combine_files", { parts, outputPath });
 }
 
 export interface VolumeInfo {
@@ -297,4 +322,78 @@ export async function updaterCheck(): Promise<AvailableUpdate | null> {
 
 export async function updaterInstallPending(): Promise<void> {
   return invoke("updater_install_pending");
+}
+
+// --- AI ---
+
+export interface AiSettings {
+  provider: string;
+  model: string;
+  baseUrl?: string | null;
+  apiKeyConfigured: boolean;
+}
+
+export interface SaveAiSettings {
+  provider: string;
+  model: string;
+  baseUrl?: string | null;
+  apiKey?: string | null;
+}
+
+export interface AiPromptResponse {
+  output: string;
+}
+
+export async function aiGetSettings(): Promise<AiSettings> {
+  return invoke("ai_get_settings");
+}
+
+export async function aiSaveSettings(settings: SaveAiSettings): Promise<AiSettings> {
+  return invoke("ai_save_settings", { settings });
+}
+
+export async function aiDeleteApiKey(provider: string): Promise<void> {
+  return invoke("ai_delete_api_key", { provider });
+}
+
+export async function aiTestSettings(): Promise<AiPromptResponse> {
+  return invoke("ai_test_settings");
+}
+
+export async function aiRunPrompt(task: string, content: string): Promise<AiPromptResponse> {
+  return invoke("ai_run_prompt", { request: { task, content } });
+}
+
+// --- Codex bridge ---
+
+export interface CodexBridgeSettings {
+  enabled: boolean;
+  port: number;
+}
+
+export interface CodexHostingSummary {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  protocol: string;
+  username: string;
+}
+
+export async function codexGetBridgeSettings(): Promise<CodexBridgeSettings> {
+  return invoke("codex_get_bridge_settings");
+}
+
+export async function codexSaveBridgeSettings(settings: CodexBridgeSettings): Promise<CodexBridgeSettings> {
+  return invoke("codex_save_bridge_settings", { settings });
+}
+
+export async function codexListHostings(): Promise<CodexHostingSummary[]> {
+  return invoke("codex_list_hostings");
+}
+
+// --- UI ---
+
+export async function uiShowContextMenu(payload: NativeContextMenuPayload): Promise<void> {
+  return invoke("ui_show_context_menu", { payload });
 }

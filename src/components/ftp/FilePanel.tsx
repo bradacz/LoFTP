@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Folder, File, ChevronUp, HardDrive, Globe, Copy, Check } from "lucide-react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
+import { ChevronUp, HardDrive, Globe, Copy, Check } from "lucide-react";
 import { FileItem } from "@/types/ftp";
 import { CompareStatus } from "@/hooks/useDirectoryCompare";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { FileTypeIcon } from "./FileTypeIcon";
 
 interface FilePanelProps {
   title: string;
@@ -24,11 +25,110 @@ interface FilePanelProps {
   compareStatus?: Map<string, CompareStatus>;
 }
 
+type SortColumn = "name" | "type" | "size" | "modified";
+type ResizableColumn = "type" | "size" | "modified";
+type ColumnWidths = Record<ResizableColumn, number>;
+type ResizeBoundary = "type" | "size" | "modified";
+
+const SORT_STORAGE_PREFIX = "loftp-file-panel-sort";
+const COLUMN_WIDTHS_STORAGE_PREFIX = "loftp-file-panel-column-widths";
+const PANEL_HORIZONTAL_PADDING = 24;
+const MIN_NAME_COLUMN_WIDTH = 180;
+const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
+  type: 92,
+  size: 80,
+  modified: 130,
+};
+const MIN_COLUMN_WIDTHS: ColumnWidths = {
+  type: 72,
+  size: 72,
+  modified: 96,
+};
+
+function loadStoredSort(panelId: string): { sortBy: SortColumn; sortAsc: boolean } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(`${SORT_STORAGE_PREFIX}:${panelId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { sortBy?: SortColumn; sortAsc?: boolean };
+    if (!parsed.sortBy || typeof parsed.sortAsc !== "boolean") return null;
+    return { sortBy: parsed.sortBy, sortAsc: parsed.sortAsc };
+  } catch {
+    return null;
+  }
+}
+
+function storeSort(panelId: string, sortBy: SortColumn, sortAsc: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(`${SORT_STORAGE_PREFIX}:${panelId}`, JSON.stringify({ sortBy, sortAsc }));
+  } catch {
+    // Persistence is optional; in-memory sorting still works.
+  }
+}
+
+function loadStoredColumnWidths(panelId: string): ColumnWidths {
+  if (typeof window === "undefined") return DEFAULT_COLUMN_WIDTHS;
+  try {
+    const raw = window.localStorage.getItem(`${COLUMN_WIDTHS_STORAGE_PREFIX}:${panelId}`);
+    if (!raw) return DEFAULT_COLUMN_WIDTHS;
+    const parsed = JSON.parse(raw) as Partial<ColumnWidths>;
+    return {
+      type: typeof parsed.type === "number" ? Math.max(MIN_COLUMN_WIDTHS.type, parsed.type) : DEFAULT_COLUMN_WIDTHS.type,
+      size: typeof parsed.size === "number" ? Math.max(MIN_COLUMN_WIDTHS.size, parsed.size) : DEFAULT_COLUMN_WIDTHS.size,
+      modified:
+        typeof parsed.modified === "number"
+          ? Math.max(MIN_COLUMN_WIDTHS.modified, parsed.modified)
+          : DEFAULT_COLUMN_WIDTHS.modified,
+    };
+  } catch {
+    return DEFAULT_COLUMN_WIDTHS;
+  }
+}
+
+function storeColumnWidths(panelId: string, widths: ColumnWidths) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(`${COLUMN_WIDTHS_STORAGE_PREFIX}:${panelId}`, JSON.stringify(widths));
+  } catch {
+    // Persistence is optional; in-memory resize still works.
+  }
+}
+
+function clampColumnWidths(widths: ColumnWidths, panelWidth: number): ColumnWidths {
+  const availableWidth = Math.max(panelWidth - PANEL_HORIZONTAL_PADDING, 0);
+  const maxFixedWidth = Math.max(0, availableWidth - MIN_NAME_COLUMN_WIDTH);
+
+  const type = Math.max(
+    MIN_COLUMN_WIDTHS.type,
+    Math.min(widths.type, maxFixedWidth - MIN_COLUMN_WIDTHS.size - MIN_COLUMN_WIDTHS.modified)
+  );
+  const size = Math.max(
+    MIN_COLUMN_WIDTHS.size,
+    Math.min(widths.size, maxFixedWidth - type - MIN_COLUMN_WIDTHS.modified)
+  );
+  const modified = Math.max(
+    MIN_COLUMN_WIDTHS.modified,
+    Math.min(widths.modified, maxFixedWidth - type - size)
+  );
+
+  return { type, size, modified };
+}
+
 function formatSize(bytes: number): string {
   if (bytes === 0) return "—";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getFileTypeLabel(file: FileItem, folderLabel: string, fileLabel: string): string {
+  if (file.name === "..") return "";
+  if (file.isDirectory) return folderLabel;
+
+  const lastDot = file.name.lastIndexOf(".");
+  if (lastDot <= 0 || lastDot === file.name.length - 1) return fileLabel;
+  return file.name.slice(lastDot + 1).toUpperCase();
 }
 
 export function FilePanel({
@@ -50,14 +150,23 @@ export function FilePanel({
   compareStatus,
 }: FilePanelProps) {
   const { t } = useI18n();
-  const [sortBy, setSortBy] = useState<"name" | "size" | "modified">("name");
-  const [sortAsc, setSortAsc] = useState(true);
+  const folderLabel = t("filePanel.folder");
+  const fileLabel = t("filePanel.file");
+  const [sortBy, setSortBy] = useState<SortColumn>(() => loadStoredSort(panelId)?.sortBy ?? "name");
+  const [sortAsc, setSortAsc] = useState(() => loadStoredSort(panelId)?.sortAsc ?? true);
+  const [columnWidths, setColumnWidths] = useState<ColumnWidths>(() => loadStoredColumnWidths(panelId));
   const [dragOver, setDragOver] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(0);
+  const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const resizeStateRef = useRef<{
+    boundary: ResizeBoundary;
+    startX: number;
+    startWidths: ColumnWidths;
+  } | null>(null);
 
-  const handleSort = (col: "name" | "size" | "modified") => {
+  const handleSort = (col: SortColumn) => {
     if (sortBy === col) setSortAsc(!sortAsc);
     else {
       setSortBy(col);
@@ -65,23 +174,172 @@ export function FilePanel({
     }
   };
 
+  useEffect(() => {
+    const stored = loadStoredSort(panelId);
+    if (stored) {
+      setSortBy(stored.sortBy);
+      setSortAsc(stored.sortAsc);
+    } else {
+      setSortBy("name");
+      setSortAsc(true);
+    }
+    setColumnWidths(loadStoredColumnWidths(panelId));
+  }, [panelId]);
+
+  useEffect(() => {
+    storeSort(panelId, sortBy, sortAsc);
+  }, [panelId, sortBy, sortAsc]);
+
+  useEffect(() => {
+    storeColumnWidths(panelId, columnWidths);
+  }, [panelId, columnWidths]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const resizeState = resizeStateRef.current;
+      if (!resizeState) return;
+
+      const panelWidth = panelRef.current?.clientWidth ?? 0;
+      const availableWidth = Math.max(panelWidth - PANEL_HORIZONTAL_PADDING, 0);
+      const deltaX = event.clientX - resizeState.startX;
+
+      setColumnWidths((current) => {
+        let nextWidths = current;
+
+        if (resizeState.boundary === "type") {
+          const maxType = Math.max(
+            MIN_COLUMN_WIDTHS.type,
+            availableWidth -
+              resizeState.startWidths.size -
+              resizeState.startWidths.modified -
+              MIN_NAME_COLUMN_WIDTH
+          );
+          const nextType = Math.max(
+            MIN_COLUMN_WIDTHS.type,
+            Math.min(resizeState.startWidths.type - deltaX, maxType)
+          );
+          nextWidths = {
+            ...current,
+            type: nextType,
+            size: resizeState.startWidths.size,
+            modified: resizeState.startWidths.modified,
+          };
+        } else if (resizeState.boundary === "size") {
+          const total = resizeState.startWidths.type + resizeState.startWidths.size;
+          const nextSize = Math.max(
+            MIN_COLUMN_WIDTHS.size,
+            Math.min(resizeState.startWidths.size - deltaX, total - MIN_COLUMN_WIDTHS.type)
+          );
+          nextWidths = {
+            ...current,
+            type: total - nextSize,
+            size: nextSize,
+            modified: resizeState.startWidths.modified,
+          };
+        } else if (resizeState.boundary === "modified") {
+          const total = resizeState.startWidths.size + resizeState.startWidths.modified;
+          const nextModified = Math.max(
+            MIN_COLUMN_WIDTHS.modified,
+            Math.min(resizeState.startWidths.modified - deltaX, total - MIN_COLUMN_WIDTHS.size)
+          );
+          nextWidths = {
+            ...current,
+            type: resizeState.startWidths.type,
+            size: total - nextModified,
+            modified: nextModified,
+          };
+        }
+
+        nextWidths = clampColumnWidths(nextWidths, panelWidth);
+        if (
+          current.type === nextWidths.type &&
+          current.size === nextWidths.size &&
+          current.modified === nextWidths.modified
+        ) {
+          return current;
+        }
+        return nextWidths;
+      });
+    };
+
+    const handlePointerUp = () => {
+      resizeStateRef.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, []);
+
+  const startColumnResize = useCallback(
+    (boundary: ResizeBoundary, event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      resizeStateRef.current = {
+        boundary,
+        startX: event.clientX,
+        startWidths: columnWidths,
+      };
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [columnWidths]
+  );
+
+  useEffect(() => {
+    const panelElement = panelRef.current;
+    if (!panelElement || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setColumnWidths((current) => {
+        const next = clampColumnWidths(current, entry.contentRect.width);
+        if (
+          next.type === current.type &&
+          next.size === current.size &&
+          next.modified === current.modified
+        ) {
+          return current;
+        }
+        return next;
+      });
+    });
+
+    observer.observe(panelElement);
+    return () => observer.disconnect();
+  }, []);
+
   // Ensure ".." entry exists when not at root
-  const filesWithParent = (() => {
+  const filesWithParent = useMemo(() => {
     const hasParent = files.some((f) => f.name === "..");
     if (hasParent || currentPath === "/" || currentPath === "") return files;
     const parentEntry: FileItem = { name: "..", isDirectory: true, size: 0, modified: "" };
     return [parentEntry, ...files];
-  })();
+  }, [files, currentPath]);
 
-  const sorted = [...filesWithParent].sort((a, b) => {
+  const sorted = useMemo(() => [...filesWithParent].sort((a, b) => {
     if (a.name === "..") return -1;
     if (b.name === "..") return 1;
     if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
     const dir = sortAsc ? 1 : -1;
     if (sortBy === "name") return a.name.localeCompare(b.name) * dir;
+    if (sortBy === "type") {
+      const typeCmp =
+        getFileTypeLabel(a, folderLabel, fileLabel).localeCompare(
+          getFileTypeLabel(b, folderLabel, fileLabel)
+        ) * dir;
+      return typeCmp !== 0 ? typeCmp : a.name.localeCompare(b.name) * dir;
+    }
     if (sortBy === "size") return (a.size - b.size) * dir;
     return (a.modified.localeCompare(b.modified)) * dir;
-  });
+  }), [filesWithParent, sortBy, sortAsc, folderLabel, fileLabel]);
 
   // Reset focused index when files change
   useEffect(() => {
@@ -222,9 +480,14 @@ export function FilePanel({
   }, [sorted, focusedIndex, onSelect, onDoubleClick, onRangeSelect, onUpdateLastClicked, scrollToIndex]);
 
   const IconComp = icon === "local" ? HardDrive : Globe;
+  const gridTemplateColumns = useMemo(
+    () => `minmax(0,1fr) ${columnWidths.type}px ${columnWidths.size}px ${columnWidths.modified}px`,
+    [columnWidths]
+  );
 
   return (
     <div
+      ref={panelRef}
       className={cn(
         "flex flex-col h-full bg-panel rounded-lg border overflow-hidden transition-colors",
         dragOver ? "border-primary border-2" : isFocused ? "border-primary/50 border" : "border-border"
@@ -270,16 +533,34 @@ export function FilePanel({
       </div>
 
       {/* Column headers */}
-      <div className="grid grid-cols-[1fr_80px_130px] px-3 py-1.5 bg-panel-header border-b border-border text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+      <div
+        className="grid px-3 py-1.5 bg-panel-header border-b border-border text-[11px] font-medium text-muted-foreground uppercase tracking-wider"
+        style={{ gridTemplateColumns }}
+      >
         <button onClick={() => handleSort("name")} className="text-left hover:text-foreground transition-colors">
-          Název {sortBy === "name" && (sortAsc ? "↑" : "↓")}
+          {t("filePanel.name")} {sortBy === "name" && (sortAsc ? "↑" : "↓")}
         </button>
-        <button onClick={() => handleSort("size")} className="text-right hover:text-foreground transition-colors">
-          Velikost {sortBy === "size" && (sortAsc ? "↑" : "↓")}
-        </button>
-        <button onClick={() => handleSort("modified")} className="text-right hover:text-foreground transition-colors">
-          Změněno {sortBy === "modified" && (sortAsc ? "↑" : "↓")}
-        </button>
+        <ResizableHeaderButton
+          align="center"
+          label={`${t("filePanel.type")} ${sortBy === "type" ? (sortAsc ? "↑" : "↓") : ""}`.trim()}
+          onClick={() => handleSort("type")}
+          onResizeStart={(event) => startColumnResize("type", event)}
+          resizeTitle={t("filePanel.resizeColumn")}
+        />
+        <ResizableHeaderButton
+          align="center"
+          label={`${t("filePanel.size")} ${sortBy === "size" ? (sortAsc ? "↑" : "↓") : ""}`.trim()}
+          onClick={() => handleSort("size")}
+          onResizeStart={(event) => startColumnResize("size", event)}
+          resizeTitle={t("filePanel.resizeColumn")}
+        />
+        <ResizableHeaderButton
+          align="right"
+          label={`${t("filePanel.modified")} ${sortBy === "modified" ? (sortAsc ? "↑" : "↓") : ""}`.trim()}
+          onClick={() => handleSort("modified")}
+          onResizeStart={(event) => startColumnResize("modified", event)}
+          resizeTitle={t("filePanel.resizeColumn")}
+        />
       </div>
 
       {/* File list — keyboard navigable */}
@@ -328,45 +609,101 @@ export function FilePanel({
                 onContextMenu?.(e, file);
               }}
               className={cn(
-                "grid grid-cols-[1fr_80px_130px] px-3 py-1 cursor-pointer transition-colors text-xs font-mono-file",
+                "grid px-3 py-1 cursor-pointer transition-colors text-xs font-mono-file",
                 isSelected
                   ? "bg-file-selected text-file-selected-text"
                   : cmpClass || "hover:bg-file-hover",
                 isFocusedRow && !isSelected && "ring-1 ring-inset ring-primary/40",
                 isFocusedRow && isSelected && "ring-1 ring-inset ring-primary"
               )}
+              style={{ gridTemplateColumns }}
             >
-              <div className="flex items-center gap-2 truncate">
-                {file.isDirectory ? (
-                  <Folder className="h-3.5 w-3.5 text-folder shrink-0" />
-                ) : (
-                  <File className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                )}
+              <div className="flex items-center gap-2 truncate min-w-0">
+                <FileTypeIcon fileName={file.name} isDirectory={file.isDirectory} />
                 <span className="truncate">{file.name}</span>
               </div>
-              <div className="text-right text-muted-foreground">
+              <div className="truncate text-center text-muted-foreground">
+                {getFileTypeLabel(file, t("filePanel.folder"), t("filePanel.file"))}
+              </div>
+              <div className="min-w-0 truncate text-center text-muted-foreground">
                 {file.isDirectory ? t("common.dir") : formatSize(file.size)}
               </div>
-              <div className="text-right text-muted-foreground">{file.modified}</div>
+              <div className="min-w-0 truncate text-right text-muted-foreground">{file.modified}</div>
             </div>
           );
         })}
       </div>
 
       {/* Status bar */}
-      <div className="px-3 py-1.5 bg-status border-t border-border text-[11px] text-muted-foreground flex justify-between">
-        <span>
-          {files.filter((f) => !f.isDirectory && f.name !== "..").length} souborů, {files.filter((f) => f.isDirectory && f.name !== "..").length} složek
-          {" | "}
-          {formatSize(files.filter((f) => !f.isDirectory).reduce((s, f) => s + f.size, 0))}
-        </span>
-        <span>
-          {selectedFiles.size > 0 && (
-            <span className="text-primary font-medium">
-              {selectedFiles.size} vybráno ({formatSize(files.filter((f) => selectedFiles.has(f.name)).reduce((s, f) => s + f.size, 0))})
-            </span>
-          )}
-        </span>
+      <StatusBar files={files} selectedFiles={selectedFiles} />
+    </div>
+  );
+}
+
+const StatusBar = memo(function StatusBar({ files, selectedFiles }: { files: FileItem[]; selectedFiles: Set<string> }) {
+  const { t } = useI18n();
+  const stats = useMemo(() => {
+    const fileCount = files.filter((f) => !f.isDirectory && f.name !== "..").length;
+    const dirCount = files.filter((f) => f.isDirectory && f.name !== "..").length;
+    const totalSize = files.filter((f) => !f.isDirectory).reduce((s, f) => s + f.size, 0);
+    return { fileCount, dirCount, totalSize };
+  }, [files]);
+
+  const selectionSize = useMemo(() => {
+    if (selectedFiles.size === 0) return 0;
+    return files.filter((f) => selectedFiles.has(f.name)).reduce((s, f) => s + f.size, 0);
+  }, [files, selectedFiles]);
+
+  return (
+    <div className="px-3 py-1.5 bg-status border-t border-border text-[11px] text-muted-foreground flex justify-between">
+      <span>
+        {t("filePanel.filesAndDirs", { files: stats.fileCount, dirs: stats.dirCount })}
+        {" | "}
+        {formatSize(stats.totalSize)}
+      </span>
+      <span>
+        {selectedFiles.size > 0 && (
+          <span className="text-primary font-medium">
+            {t("common.selectedCount", { count: selectedFiles.size })} ({formatSize(selectionSize)})
+          </span>
+        )}
+      </span>
+    </div>
+  );
+});
+
+function ResizableHeaderButton({
+  label,
+  align,
+  onClick,
+  onResizeStart,
+  resizeTitle,
+}: {
+  label: string;
+  align: "left" | "center" | "right";
+  onClick: () => void;
+  onResizeStart: (event: React.PointerEvent<HTMLDivElement>) => void;
+  resizeTitle: string;
+}) {
+  return (
+    <div className="relative min-w-0">
+      <button
+        onClick={onClick}
+        className={cn(
+          "w-full hover:text-foreground transition-colors truncate pl-3",
+          align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left"
+        )}
+      >
+        {label}
+      </button>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        className="absolute left-0 top-[-6px] bottom-[-6px] w-3 cursor-col-resize touch-none group"
+        onPointerDown={onResizeStart}
+        title={resizeTitle}
+      >
+        <div className="absolute inset-y-1 left-1 w-px bg-border group-hover:bg-primary/70" />
       </div>
     </div>
   );

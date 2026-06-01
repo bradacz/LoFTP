@@ -4,24 +4,24 @@
 
 @layer base {
   :root {
-    /* Light mode — warm beige/cream from screenshot */
-    --background: 38 33% 92%;
-    --foreground: 30 10% 20%;
+    /* Light mode — clear commander-style shell with white file panels */
+    --background: 214 28% 92%;
+    --foreground: 218 34% 17%;
 
-    --card: 38 30% 95%;
-    --card-foreground: 30 10% 20%;
+    --card: 0 0% 98%;
+    --card-foreground: 218 34% 17%;
 
-    --popover: 38 30% 95%;
-    --popover-foreground: 30 10% 20%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 218 34% 17%;
 
     --primary: 213 60% 45%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 38 25% 86%;
-    --secondary-foreground: 30 10% 25%;
+    --secondary: 213 28% 88%;
+    --secondary-foreground: 218 34% 20%;
 
-    --muted: 38 20% 88%;
-    --muted-foreground: 30 10% 45%;
+    --muted: 213 25% 90%;
+    --muted-foreground: 217 16% 42%;
 
     --accent: 213 50% 90%;
     --accent-foreground: 213 70% 30%;
@@ -29,36 +29,36 @@
     --destructive: 0 65% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 38 20% 78%;
-    --input: 38 20% 78%;
+    --border: 213 22% 76%;
+    --input: 213 22% 76%;
     --ring: 213 60% 50%;
 
     --radius: 0.5rem;
 
-    /* FTP App tokens — light warm */
-    --panel-bg: 38 30% 95%;
-    --panel-header: 38 22% 82%;
-    --toolbar-bg: 38 22% 82%;
-    --toolbar-border: 38 18% 72%;
-    --file-hover: 38 30% 90%;
-    --file-selected: 213 60% 88%;
-    --file-selected-text: 213 80% 30%;
-    --hosting-tab: 38 25% 88%;
+    /* FTP App tokens — white file panel, stronger chrome */
+    --panel-bg: 0 0% 100%;
+    --panel-header: 213 30% 87%;
+    --toolbar-bg: 214 33% 84%;
+    --toolbar-border: 213 25% 68%;
+    --file-hover: 207 100% 96%;
+    --file-selected: 209 90% 88%;
+    --file-selected-text: 213 85% 28%;
+    --hosting-tab: 214 28% 90%;
     --hosting-tab-active: 213 60% 45%;
     --hosting-tab-active-text: 0 0% 100%;
-    --divider: 38 18% 72%;
-    --status-bar: 38 22% 84%;
-    --folder-color: 166 100% 35%;
+    --divider: 213 60% 45%;
+    --status-bar: 214 28% 88%;
+    --folder-color: 39 95% 46%;
     --success: 142 71% 40%;
     --progress-track: 38 20% 80%;
 
-    --sidebar-background: 38 30% 93%;
-    --sidebar-foreground: 30 10% 25%;
-    --sidebar-primary: 30 10% 20%;
-    --sidebar-primary-foreground: 38 30% 95%;
-    --sidebar-accent: 38 25% 88%;
-    --sidebar-accent-foreground: 30 10% 20%;
-    --sidebar-border: 38 20% 78%;
+    --sidebar-background: 214 28% 90%;
+    --sidebar-foreground: 218 34% 20%;
+    --sidebar-primary: 218 34% 17%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 214 28% 88%;
+    --sidebar-accent-foreground: 218 34% 17%;
+    --sidebar-border: 213 22% 76%;
     --sidebar-ring: 350 80% 59%;
   }
 
@@ -145,5 +145,9 @@
 @layer utilities {
   .font-mono-file {
     font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+  }
+
+  .settings-input {
+    @apply w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground outline-none transition-all placeholder:text-muted-foreground/50 focus:border-primary focus:ring-2 focus:ring-primary/15;
   }
 }
