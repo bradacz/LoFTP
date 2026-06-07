@@ -41,6 +41,8 @@ struct StoredAiSettings {
     provider: String,
     model: String,
     base_url: Option<String>,
+    #[serde(default)]
+    api_key_configured: bool,
 }
 
 fn app_data_dir() -> PathBuf {
@@ -59,6 +61,7 @@ fn default_settings() -> StoredAiSettings {
         provider: "openai".to_string(),
         model: String::new(),
         base_url: None,
+        api_key_configured: false,
     }
 }
 
@@ -86,7 +89,7 @@ fn save_stored_settings(settings: &StoredAiSettings) -> Result<(), String> {
 pub fn ai_get_settings() -> Result<AiSettings, String> {
     let stored = load_stored_settings();
     Ok(AiSettings {
-        api_key_configured: credential_store::load_ai_api_key(&stored.provider).is_some(),
+        api_key_configured: stored.api_key_configured,
         provider: stored.provider,
         model: stored.model,
         base_url: stored.base_url,
@@ -95,16 +98,26 @@ pub fn ai_get_settings() -> Result<AiSettings, String> {
 
 #[tauri::command]
 pub fn ai_save_settings(settings: SaveAiSettings) -> Result<AiSettings, String> {
+    let previous = load_stored_settings();
     let provider = normalize_provider(&settings.provider);
+    let has_new_api_key = settings
+        .api_key
+        .as_deref()
+        .map(|api_key| !api_key.trim().is_empty())
+        .unwrap_or(false);
     let stored = StoredAiSettings {
         provider: provider.clone(),
         model: settings.model.trim().to_string(),
-        base_url: settings
-            .base_url
-            .and_then(|value| {
-                let trimmed = value.trim().trim_end_matches('/').to_string();
-                if trimmed.is_empty() { None } else { Some(trimmed) }
-            }),
+        base_url: settings.base_url.and_then(|value| {
+            let trimmed = value.trim().trim_end_matches('/').to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        }),
+        api_key_configured: has_new_api_key
+            || (previous.api_key_configured && normalize_provider(&previous.provider) == provider),
     };
 
     if let Some(api_key) = settings.api_key {
@@ -120,7 +133,16 @@ pub fn ai_save_settings(settings: SaveAiSettings) -> Result<AiSettings, String> 
 
 #[tauri::command]
 pub fn ai_delete_api_key(provider: String) -> Result<(), String> {
-    credential_store::delete_ai_api_key(&normalize_provider(&provider))
+    let provider = normalize_provider(&provider);
+    credential_store::delete_ai_api_key(&provider)?;
+
+    let mut stored = load_stored_settings();
+    if normalize_provider(&stored.provider) == provider {
+        stored.api_key_configured = false;
+        save_stored_settings(&stored)?;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -166,11 +188,14 @@ async fn call_openai_compatible(
     prompt: &str,
 ) -> Result<String, String> {
     let provider = normalize_provider(&settings.provider);
-    let base_url = settings.base_url.clone().unwrap_or_else(|| match provider.as_str() {
-        "perplexity" => "https://api.perplexity.ai".to_string(),
-        "nvidia" => "https://integrate.api.nvidia.com/v1".to_string(),
-        _ => "https://api.openai.com/v1".to_string(),
-    });
+    let base_url = settings
+        .base_url
+        .clone()
+        .unwrap_or_else(|| match provider.as_str() {
+            "perplexity" => "https://api.perplexity.ai".to_string(),
+            "nvidia" => "https://integrate.api.nvidia.com/v1".to_string(),
+            _ => "https://api.openai.com/v1".to_string(),
+        });
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
     let mut headers = HeaderMap::new();
@@ -208,7 +233,10 @@ async fn call_anthropic(
 
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    headers.insert("x-api-key", HeaderValue::from_str(api_key).map_err(|e| e.to_string())?);
+    headers.insert(
+        "x-api-key",
+        HeaderValue::from_str(api_key).map_err(|e| e.to_string())?,
+    );
     headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
 
     let body = json!({

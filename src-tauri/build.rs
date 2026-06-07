@@ -5,7 +5,10 @@ fn main() {
         .expect("Missing app root")
         .to_path_buf();
 
-    for candidate in [app_root.join(".env.production.local"), app_root.join(".env.production")] {
+    for candidate in [
+        app_root.join(".env.production.local"),
+        app_root.join(".env.production"),
+    ] {
         println!("cargo:rerun-if-changed={}", candidate.display());
         if candidate.exists() {
             let _ = dotenvy::from_path_override(candidate);

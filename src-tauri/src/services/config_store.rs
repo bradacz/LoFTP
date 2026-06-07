@@ -1,6 +1,5 @@
 use crate::models::hosting::{HostingConfig, StoredHostingConfig};
 use crate::models::license::StoredLicense;
-use crate::services::credential_store;
 use std::fs;
 use std::path::PathBuf;
 
@@ -51,8 +50,7 @@ pub fn load_hostings() -> Vec<HostingConfig> {
                         host: stored.host,
                         port: stored.port,
                         username: stored.username,
-                        password: credential_store::load_hosting_password(&stored.id)
-                            .unwrap_or_default(),
+                        password: String::new(),
                         protocol: stored.protocol,
                         use_tls: stored.use_tls,
                         ssh_key_path: stored.ssh_key_path,

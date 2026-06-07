@@ -103,10 +103,10 @@ export function useConnection() {
     return ftpMkdir(hostingId, path);
   }, []);
 
-  const deleteRemote = useCallback(async (hostingId: string, path: string, isDir: boolean, protocol: HostingProtocol) => {
+  const deleteRemote = useCallback(async (hostingId: string, path: string, isDir: boolean, protocol: HostingProtocol, deleteId?: string) => {
     if (protocol === "bunnyStorage") return bunnyStorageDelete(hostingId, path, isDir);
-    if (protocol === "sftp") return sftpDelete(hostingId, path, isDir);
-    return ftpDelete(hostingId, path, isDir);
+    if (protocol === "sftp") return sftpDelete(hostingId, path, isDir, deleteId);
+    return ftpDelete(hostingId, path, isDir, deleteId);
   }, []);
 
   const renameRemote = useCallback(async (hostingId: string, from: string, to: string, protocol: HostingProtocol) => {

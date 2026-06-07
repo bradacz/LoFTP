@@ -33,7 +33,13 @@ pub struct FtpSession {
 }
 
 impl FtpSession {
-    pub fn connect(host: &str, port: u16, user: &str, pass: &str, use_tls: bool) -> Result<Self, String> {
+    pub fn connect(
+        host: &str,
+        port: u16,
+        user: &str,
+        pass: &str,
+        use_tls: bool,
+    ) -> Result<Self, String> {
         let inner = Self::create_connection(host, port, user, pass, use_tls)?;
         Ok(Self {
             inner,
@@ -45,7 +51,13 @@ impl FtpSession {
         })
     }
 
-    fn create_connection(host: &str, port: u16, user: &str, pass: &str, use_tls: bool) -> Result<FtpInner, String> {
+    fn create_connection(
+        host: &str,
+        port: u16,
+        user: &str,
+        pass: &str,
+        use_tls: bool,
+    ) -> Result<FtpInner, String> {
         let addr = format!("{}:{}", host, port);
         if use_tls {
             let connector = NativeTlsConnector::from(
@@ -66,8 +78,8 @@ impl FtpSession {
                 .map_err(|e| format!("Set binary mode failed: {}", e))?;
             Ok(FtpInner::Tls(tls))
         } else {
-            let mut s = FtpStream::connect(&addr)
-                .map_err(|e| format!("FTP connect failed: {}", e))?;
+            let mut s =
+                FtpStream::connect(&addr).map_err(|e| format!("FTP connect failed: {}", e))?;
             s.login(user, pass)
                 .map_err(|e| format!("FTP login failed: {}", e))?;
             s.transfer_type(suppaftp::types::FileType::Binary)
@@ -78,7 +90,8 @@ impl FtpSession {
 
     /// Reconnect if the session has expired
     pub fn reconnect(&mut self) -> Result<(), String> {
-        self.inner = Self::create_connection(&self.host, self.port, &self.user, &self.pass, self.use_tls)?;
+        self.inner =
+            Self::create_connection(&self.host, self.port, &self.user, &self.pass, self.use_tls)?;
         Ok(())
     }
 
@@ -217,42 +230,45 @@ impl FtpSession {
         let mut writer = BufWriter::with_capacity(CHUNK_SIZE, local_file);
         let mut received = 0u64;
 
-        ftp!(self, retr(remote_path, |reader| {
-            let mut buffer = [0u8; CHUNK_SIZE];
-            loop {
-                if let Some(token) = cancel_token {
-                    if token.load(std::sync::atomic::Ordering::Relaxed) {
-                        return Err(suppaftp::FtpError::ConnectionError(
-                            std::io::Error::new(std::io::ErrorKind::Interrupted, "Transfer cancelled")
-                        ));
+        ftp!(
+            self,
+            retr(remote_path, |reader| {
+                let mut buffer = [0u8; CHUNK_SIZE];
+                loop {
+                    if let Some(token) = cancel_token {
+                        if token.load(std::sync::atomic::Ordering::Relaxed) {
+                            return Err(suppaftp::FtpError::ConnectionError(std::io::Error::new(
+                                std::io::ErrorKind::Interrupted,
+                                "Transfer cancelled",
+                            )));
+                        }
                     }
-                }
-                let bytes_read = reader
-                    .read(&mut buffer)
-                    .map_err(suppaftp::FtpError::ConnectionError)?;
-                if bytes_read == 0 {
-                    break;
+                    let bytes_read = reader
+                        .read(&mut buffer)
+                        .map_err(suppaftp::FtpError::ConnectionError)?;
+                    if bytes_read == 0 {
+                        break;
+                    }
+
+                    writer
+                        .write_all(&buffer[..bytes_read])
+                        .map_err(suppaftp::FtpError::ConnectionError)?;
+                    received += bytes_read as u64;
+                    on_progress(received, total);
                 }
 
                 writer
-                    .write_all(&buffer[..bytes_read])
+                    .flush()
                     .map_err(suppaftp::FtpError::ConnectionError)?;
-                received += bytes_read as u64;
-                on_progress(received, total);
-            }
-
-            writer
-                .flush()
-                .map_err(suppaftp::FtpError::ConnectionError)?;
-            Ok(())
-        }))
+                Ok(())
+            })
+        )
         .map_err(|e| format!("FTP download failed: {}", e))
     }
 
     pub fn mkdir(&mut self, path: &str) -> Result<(), String> {
         self.ensure_connected()?;
-        ftp!(self, mkdir(path))
-            .map_err(|e| format!("FTP mkdir failed: {}", e))
+        ftp!(self, mkdir(path)).map_err(|e| format!("FTP mkdir failed: {}", e))
     }
 
     /// Create directory and all parents (like mkdir -p)
@@ -269,37 +285,17 @@ impl FtpSession {
 
     pub fn delete_file(&mut self, path: &str) -> Result<(), String> {
         self.ensure_connected()?;
-        ftp!(self, rm(path))
-            .map_err(|e| format!("FTP delete failed: {}", e))
+        ftp!(self, rm(path)).map_err(|e| format!("FTP delete failed: {}", e))
     }
 
     pub fn delete_dir(&mut self, path: &str) -> Result<(), String> {
         self.ensure_connected()?;
-        ftp!(self, rmdir(path))
-            .map_err(|e| format!("FTP rmdir failed: {}", e))
-    }
-
-    /// Recursively delete a directory and all contents
-    pub fn delete_dir_recursive(&mut self, path: &str) -> Result<(), String> {
-        let items = self.list_dir(path)?;
-        for item in items {
-            if item.name == ".." {
-                continue;
-            }
-            let child = format!("{}/{}", path, item.name);
-            if item.is_directory {
-                self.delete_dir_recursive(&child)?;
-            } else {
-                self.delete_file(&child)?;
-            }
-        }
-        self.delete_dir(path)
+        ftp!(self, rmdir(path)).map_err(|e| format!("FTP rmdir failed: {}", e))
     }
 
     pub fn rename(&mut self, from: &str, to: &str) -> Result<(), String> {
         self.ensure_connected()?;
-        ftp!(self, rename(from, to))
-            .map_err(|e| format!("FTP rename failed: {}", e))
+        ftp!(self, rename(from, to)).map_err(|e| format!("FTP rename failed: {}", e))
     }
 
     pub fn exists(&mut self, path: &str) -> Result<bool, String> {
@@ -334,7 +330,9 @@ impl FtpSession {
         if let Ok(entry) = ftp!(self, mlst(Some(path))) {
             if let Some(item) = parse_mlsx_entry(&entry) {
                 // Parse the modified string back to timestamp
-                if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&item.modified, "%Y-%m-%d %H:%M") {
+                if let Ok(dt) =
+                    chrono::NaiveDateTime::parse_from_str(&item.modified, "%Y-%m-%d %H:%M")
+                {
                     return Some(dt.and_utc().timestamp());
                 }
             }
@@ -343,8 +341,7 @@ impl FtpSession {
     }
 
     pub fn disconnect(&mut self) -> Result<(), String> {
-        ftp!(self, quit())
-            .map_err(|e| format!("FTP disconnect failed: {}", e))
+        ftp!(self, quit()).map_err(|e| format!("FTP disconnect failed: {}", e))
     }
 
     fn inspect_nlst_entry(&mut self, full_path: &str) -> Option<FileItem> {
@@ -410,7 +407,10 @@ impl<R: Read, F: FnMut(u64, u64)> Read for ProgressReader<'_, R, F> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if let Some(token) = self.cancel_token {
             if token.load(std::sync::atomic::Ordering::Relaxed) {
-                return Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "Transfer cancelled"));
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "Transfer cancelled",
+                ));
             }
         }
         let n = self.inner.read(buf)?;

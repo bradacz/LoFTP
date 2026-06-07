@@ -26,19 +26,13 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
     licenseGetStatus()
-      .then((initial) => {
-        if (mounted) setStatus(initial);
+      .then((localStatus) => {
+        if (mounted) setStatus(localStatus);
       })
       .catch(() => {
-        if (mounted) setStatus({ status: "unlicensed" });
-      });
-
-    licenseCheck()
-      .then((verified) => {
-        if (mounted) setStatus(verified);
-      })
-      .catch(() => {
-        // Keep the locally available status when online validation fails.
+        if (mounted) {
+          setStatus({ status: "unlicensed" });
+        }
       });
 
     return () => {

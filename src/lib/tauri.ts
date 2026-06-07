@@ -128,8 +128,8 @@ export async function ftpMkdir(hostingId: string, path: string): Promise<void> {
   return invoke("ftp_mkdir", { hostingId, path });
 }
 
-export async function ftpDelete(hostingId: string, path: string, isDir: boolean): Promise<void> {
-  return invoke("ftp_delete", { hostingId, path, isDir });
+export async function ftpDelete(hostingId: string, path: string, isDir: boolean, deleteId?: string): Promise<void> {
+  return invoke("ftp_delete", { hostingId, path, isDir, deleteId: deleteId ?? null });
 }
 
 export async function ftpRename(hostingId: string, from: string, to: string): Promise<void> {
@@ -224,8 +224,8 @@ export async function sftpMkdir(hostingId: string, path: string): Promise<void> 
   return invoke("sftp_mkdir", { hostingId, path });
 }
 
-export async function sftpDelete(hostingId: string, path: string, isDir: boolean): Promise<void> {
-  return invoke("sftp_delete", { hostingId, path, isDir });
+export async function sftpDelete(hostingId: string, path: string, isDir: boolean, deleteId?: string): Promise<void> {
+  return invoke("sftp_delete", { hostingId, path, isDir, deleteId: deleteId ?? null });
 }
 
 export async function sftpRename(hostingId: string, from: string, to: string): Promise<void> {

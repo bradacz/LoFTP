@@ -46,3 +46,18 @@ export interface TransferItem {
   error?: string;
   startedAt?: number;
 }
+
+export type DeleteOperationStatus = "pending" | "deleting" | "done" | "error";
+
+export interface DeleteProgress {
+  id: string;
+  mode: "local" | "remote";
+  rootPath: string;
+  currentPath: string;
+  currentName: string;
+  completedItems: number;
+  totalItems: number;
+  status: DeleteOperationStatus;
+  error?: string;
+  startedAt: number;
+}

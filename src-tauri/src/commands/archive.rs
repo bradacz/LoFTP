@@ -1,5 +1,5 @@
-use crate::models::file_item::FileItem;
 use crate::commands::viewer::{build_preview_data_url, detect_file_type, FileContent, HexLine};
+use crate::models::file_item::FileItem;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -28,10 +28,7 @@ pub fn archive_list(path: String) -> Result<Vec<ArchiveEntry>, String> {
         "zip" => list_zip(&path),
         "gz" | "tgz" => {
             // Check if it's .tar.gz
-            let stem = p
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
+            let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
             if stem.ends_with(".tar") || ext == "tgz" {
                 list_tar_gz(&path)
             } else {
@@ -161,8 +158,16 @@ pub fn archive_list_dir(path: String, inner_path: Option<String>) -> Result<Vec<
             })
             .or_insert_with(|| FileItem {
                 name: child_name.to_string(),
-                size: if is_direct_child && !is_directory { entry.size } else { 0 },
-                modified: if is_direct_child { entry.modified.clone() } else { String::new() },
+                size: if is_direct_child && !is_directory {
+                    entry.size
+                } else {
+                    0
+                },
+                modified: if is_direct_child {
+                    entry.modified.clone()
+                } else {
+                    String::new()
+                },
                 is_directory,
                 permissions: None,
                 is_symlink: None,
@@ -225,20 +230,27 @@ pub fn archive_read_hex(
         .enumerate()
         .map(|(i, row)| HexLine {
             offset: offset + i * 16,
-            hex: row.iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" "),
+            hex: row
+                .iter()
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<_>>()
+                .join(" "),
             ascii: row
                 .iter()
-                .map(|b| if b.is_ascii_graphic() || *b == b' ' { *b as char } else { '.' })
+                .map(|b| {
+                    if b.is_ascii_graphic() || *b == b' ' {
+                        *b as char
+                    } else {
+                        '.'
+                    }
+                })
                 .collect(),
         })
         .collect())
 }
 
 fn normalize_inner_path(inner_path: Option<&str>) -> String {
-    inner_path
-        .unwrap_or("/")
-        .trim_matches('/')
-        .to_string()
+    inner_path.unwrap_or("/").trim_matches('/').to_string()
 }
 
 fn parent_inner_path(inner_path: &str) -> String {
@@ -260,7 +272,11 @@ fn read_archive_entry(archive_path: &str, entry_path: &str) -> Result<Vec<u8>, S
 
 fn archive_extension_kind(path: &str) -> Result<String, String> {
     let p = Path::new(path);
-    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
     match ext.as_str() {
         "zip" => Ok("zip".to_string()),
         "tgz" => Ok("tar.gz".to_string()),
@@ -285,7 +301,9 @@ fn read_zip_entry(archive_path: &str, entry_path: &str) -> Result<Vec<u8>, Strin
         .by_name(normalized)
         .map_err(|e| format!("ZIP entry error: {}", e))?;
     let mut bytes = Vec::new();
-    entry.read_to_end(&mut bytes).map_err(|e| format!("Read error: {}", e))?;
+    entry
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("Read error: {}", e))?;
     Ok(bytes)
 }
 
@@ -302,7 +320,10 @@ fn read_tar_gz_entry(archive_path: &str, entry_path: &str) -> Result<Vec<u8>, St
     read_tar_like_entry(&mut archive, entry_path)
 }
 
-fn read_tar_like_entry<R: Read>(archive: &mut tar::Archive<R>, entry_path: &str) -> Result<Vec<u8>, String> {
+fn read_tar_like_entry<R: Read>(
+    archive: &mut tar::Archive<R>,
+    entry_path: &str,
+) -> Result<Vec<u8>, String> {
     let normalized = entry_path.trim_matches('/');
     for entry in archive.entries().map_err(|e| format!("TAR error: {}", e))? {
         let mut entry = entry.map_err(|e| format!("TAR entry error: {}", e))?;
@@ -314,7 +335,9 @@ fn read_tar_like_entry<R: Read>(archive: &mut tar::Archive<R>, entry_path: &str)
             .to_string();
         if path == normalized {
             let mut bytes = Vec::new();
-            entry.read_to_end(&mut bytes).map_err(|e| format!("Read error: {}", e))?;
+            entry
+                .read_to_end(&mut bytes)
+                .map_err(|e| format!("Read error: {}", e))?;
             return Ok(bytes);
         }
     }
@@ -329,7 +352,9 @@ fn list_zip(path: &str) -> Result<Vec<ArchiveEntry>, String> {
     let mut entries = Vec::new();
 
     for i in 0..archive.len() {
-        let f = archive.by_index(i).map_err(|e| format!("ZIP entry error: {}", e))?;
+        let f = archive
+            .by_index(i)
+            .map_err(|e| format!("ZIP entry error: {}", e))?;
         let modified = f
             .last_modified()
             .and_then(|dt| {
@@ -358,16 +383,14 @@ fn list_zip(path: &str) -> Result<Vec<ArchiveEntry>, String> {
     Ok(entries)
 }
 
-fn extract_zip(
-    path: &str,
-    target: &str,
-    files: Option<Vec<String>>,
-) -> Result<(), String> {
+fn extract_zip(path: &str, target: &str, files: Option<Vec<String>>) -> Result<(), String> {
     let file = fs::File::open(path).map_err(|e| format!("Open error: {}", e))?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("ZIP error: {}", e))?;
 
     for i in 0..archive.len() {
-        let mut f = archive.by_index(i).map_err(|e| format!("ZIP entry error: {}", e))?;
+        let mut f = archive
+            .by_index(i)
+            .map_err(|e| format!("ZIP entry error: {}", e))?;
         let name = f.name().to_string();
 
         // If specific files requested, filter
@@ -384,7 +407,8 @@ fn extract_zip(
             if let Some(parent) = out_path.parent() {
                 fs::create_dir_all(parent).map_err(|e| format!("Mkdir error: {}", e))?;
             }
-            let mut out = fs::File::create(&out_path).map_err(|e| format!("Create error: {}", e))?;
+            let mut out =
+                fs::File::create(&out_path).map_err(|e| format!("Create error: {}", e))?;
             std::io::copy(&mut f, &mut out).map_err(|e| format!("Copy error: {}", e))?;
         }
     }
@@ -412,12 +436,15 @@ fn create_zip(output: &str, sources: &[String], base_dir: &str) -> Result<(), St
                 .map_err(|e| format!("ZIP start file error: {}", e))?;
             let mut f = fs::File::open(&full_path).map_err(|e| format!("Open error: {}", e))?;
             let mut buf = Vec::new();
-            f.read_to_end(&mut buf).map_err(|e| format!("Read error: {}", e))?;
-            zip.write_all(&buf).map_err(|e| format!("Write error: {}", e))?;
+            f.read_to_end(&mut buf)
+                .map_err(|e| format!("Read error: {}", e))?;
+            zip.write_all(&buf)
+                .map_err(|e| format!("Write error: {}", e))?;
         }
     }
 
-    zip.finish().map_err(|e| format!("ZIP finish error: {}", e))?;
+    zip.finish()
+        .map_err(|e| format!("ZIP finish error: {}", e))?;
     Ok(())
 }
 
@@ -427,7 +454,10 @@ fn add_dir_to_zip(
     base: &str,
     options: zip::write::SimpleFileOptions,
 ) -> Result<(), String> {
-    for entry in walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+    for entry in walkdir::WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         let path = entry.path();
         let relative = path
             .strip_prefix(base)
@@ -443,8 +473,10 @@ fn add_dir_to_zip(
                 .map_err(|e| format!("ZIP file error: {}", e))?;
             let mut f = fs::File::open(path).map_err(|e| format!("Open error: {}", e))?;
             let mut buf = Vec::new();
-            f.read_to_end(&mut buf).map_err(|e| format!("Read error: {}", e))?;
-            zip.write_all(&buf).map_err(|e| format!("Write error: {}", e))?;
+            f.read_to_end(&mut buf)
+                .map_err(|e| format!("Read error: {}", e))?;
+            zip.write_all(&buf)
+                .map_err(|e| format!("Write error: {}", e))?;
         }
     }
     Ok(())
@@ -461,15 +493,17 @@ fn list_tar(path: &str) -> Result<Vec<ArchiveEntry>, String> {
         let entry = entry.map_err(|e| format!("TAR entry error: {}", e))?;
         let header = entry.header();
         entries.push(ArchiveEntry {
-            name: entry.path().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+            name: entry
+                .path()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default(),
             size: header.size().unwrap_or(0),
             is_directory: header.entry_type().is_dir(),
             modified: header
                 .mtime()
                 .ok()
                 .map(|t| {
-                    let dt = chrono::DateTime::from_timestamp(t as i64, 0)
-                        .unwrap_or_default();
+                    let dt = chrono::DateTime::from_timestamp(t as i64, 0).unwrap_or_default();
                     dt.format("%Y-%m-%d %H:%M").to_string()
                 })
                 .unwrap_or_default(),
@@ -489,15 +523,17 @@ fn list_tar_gz(path: &str) -> Result<Vec<ArchiveEntry>, String> {
         let entry = entry.map_err(|e| format!("TAR entry error: {}", e))?;
         let header = entry.header();
         entries.push(ArchiveEntry {
-            name: entry.path().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+            name: entry
+                .path()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default(),
             size: header.size().unwrap_or(0),
             is_directory: header.entry_type().is_dir(),
             modified: header
                 .mtime()
                 .ok()
                 .map(|t| {
-                    let dt = chrono::DateTime::from_timestamp(t as i64, 0)
-                        .unwrap_or_default();
+                    let dt = chrono::DateTime::from_timestamp(t as i64, 0).unwrap_or_default();
                     dt.format("%Y-%m-%d %H:%M").to_string()
                 })
                 .unwrap_or_default(),
@@ -510,7 +546,9 @@ fn list_tar_gz(path: &str) -> Result<Vec<ArchiveEntry>, String> {
 fn extract_tar(path: &str, target: &str, _files: Option<Vec<String>>) -> Result<(), String> {
     let file = fs::File::open(path).map_err(|e| format!("Open error: {}", e))?;
     let mut archive = tar::Archive::new(file);
-    archive.unpack(target).map_err(|e| format!("Extract error: {}", e))?;
+    archive
+        .unpack(target)
+        .map_err(|e| format!("Extract error: {}", e))?;
     Ok(())
 }
 
@@ -518,6 +556,8 @@ fn extract_tar_gz(path: &str, target: &str, _files: Option<Vec<String>>) -> Resu
     let file = fs::File::open(path).map_err(|e| format!("Open error: {}", e))?;
     let decoder = flate2::read::GzDecoder::new(file);
     let mut archive = tar::Archive::new(decoder);
-    archive.unpack(target).map_err(|e| format!("Extract error: {}", e))?;
+    archive
+        .unpack(target)
+        .map_err(|e| format!("Extract error: {}", e))?;
     Ok(())
 }

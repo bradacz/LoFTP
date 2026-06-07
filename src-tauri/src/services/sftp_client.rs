@@ -17,7 +17,13 @@ pub struct SftpSession {
 }
 
 impl SftpSession {
-    pub fn connect(host: &str, port: u16, user: &str, pass: &str, key_path: Option<&str>) -> Result<Self, String> {
+    pub fn connect(
+        host: &str,
+        port: u16,
+        user: &str,
+        pass: &str,
+        key_path: Option<&str>,
+    ) -> Result<Self, String> {
         let addr = format!("{}:{}", host, port);
         let tcp = TcpStream::connect(&addr).map_err(|e| format!("TCP connect failed: {}", e))?;
         let mut session = Session::new().map_err(|e| format!("SSH session failed: {}", e))?;
@@ -38,7 +44,12 @@ impl SftpSession {
         })
     }
 
-    fn authenticate(session: &Session, user: &str, pass: &str, key_path: Option<&str>) -> Result<(), String> {
+    fn authenticate(
+        session: &Session,
+        user: &str,
+        pass: &str,
+        key_path: Option<&str>,
+    ) -> Result<(), String> {
         if let Some(kp) = key_path {
             let expanded = shellexpand::tilde(kp).to_string();
             let passphrase = if pass.is_empty() { None } else { Some(pass) };
@@ -295,23 +306,6 @@ impl SftpSession {
             .map_err(|e| format!("SFTP init failed: {}", e))?;
         sftp.rmdir(Path::new(path))
             .map_err(|e| format!("SFTP rmdir failed: {}", e))
-    }
-
-    /// Recursively delete a directory
-    pub fn delete_dir_recursive(&mut self, path: &str) -> Result<(), String> {
-        let items = self.list_dir(path)?;
-        for item in items {
-            if item.name == ".." {
-                continue;
-            }
-            let child = format!("{}/{}", path, item.name);
-            if item.is_directory {
-                self.delete_dir_recursive(&child)?;
-            } else {
-                self.delete_file(&child)?;
-            }
-        }
-        self.delete_dir(path)
     }
 
     pub fn rename(&mut self, from: &str, to: &str) -> Result<(), String> {

@@ -3,7 +3,8 @@ use crate::models::transfer::{
     is_cancelled, CancellationState, TransferOptions, TransferProgress, TransferRegistry,
     TransferStatus,
 };
-use crate::services::ftp_client::FtpSession;
+use crate::services::{credential_store, ftp_client::FtpSession};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -31,6 +32,14 @@ struct ProgressSnapshot {
     total_files: Option<u64>,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteProgress {
+    delete_id: String,
+    path: String,
+    item_name: String,
+}
+
 impl FtpState {
     pub fn new() -> Self {
         Self {
@@ -49,7 +58,14 @@ pub fn ftp_connect(
     password: String,
     use_tls: Option<bool>,
 ) -> Result<(), String> {
-    let session = FtpSession::connect(&host, port, &username, &password, use_tls.unwrap_or(false))?;
+    let resolved_password = resolve_password(&hosting_id, password)?;
+    let session = FtpSession::connect(
+        &host,
+        port,
+        &username,
+        &resolved_password,
+        use_tls.unwrap_or(false),
+    )?;
     let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
     sessions.insert(hosting_id, session);
     Ok(())
@@ -68,6 +84,15 @@ pub fn ftp_test_connection(
     session.list_dir("/")?;
     session.disconnect().ok();
     Ok(())
+}
+
+fn resolve_password(hosting_id: &str, password: String) -> Result<String, String> {
+    if !password.is_empty() {
+        return Ok(password);
+    }
+
+    credential_store::load_hosting_password(hosting_id)
+        .ok_or_else(|| "Password is not configured.".to_string())
 }
 
 #[tauri::command]
@@ -697,18 +722,65 @@ pub fn ftp_mkdir(
 
 #[tauri::command]
 pub fn ftp_delete(
+    app: AppHandle,
     state: State<'_, FtpState>,
     hosting_id: String,
     path: String,
     is_dir: bool,
+    delete_id: Option<String>,
 ) -> Result<(), String> {
     let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
     let session = sessions.get_mut(&hosting_id).ok_or("Not connected")?;
     if is_dir {
-        session.delete_dir_recursive(&path)
+        delete_ftp_dir_recursive(session, &app, delete_id.as_deref(), &path)
     } else {
+        emit_delete_progress(&app, delete_id.as_deref(), &path);
         session.delete_file(&path)
     }
+}
+
+fn delete_ftp_dir_recursive(
+    session: &mut FtpSession,
+    app: &AppHandle,
+    delete_id: Option<&str>,
+    path: &str,
+) -> Result<(), String> {
+    emit_delete_progress(app, delete_id, path);
+    let items = session.list_dir(path)?;
+    for item in items {
+        if item.name == ".." {
+            continue;
+        }
+        let child = format!("{}/{}", path, item.name);
+        if item.is_directory {
+            delete_ftp_dir_recursive(session, app, delete_id, &child)?;
+        } else {
+            emit_delete_progress(app, delete_id, &child);
+            session.delete_file(&child)?;
+        }
+    }
+    emit_delete_progress(app, delete_id, path);
+    session.delete_dir(path)
+}
+
+fn emit_delete_progress(app: &AppHandle, delete_id: Option<&str>, path: &str) {
+    let Some(delete_id) = delete_id else {
+        return;
+    };
+    let item_name = path
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .last()
+        .unwrap_or(path)
+        .to_string();
+    let _ = app.emit(
+        "delete-progress",
+        DeleteProgress {
+            delete_id: delete_id.to_string(),
+            path: path.to_string(),
+            item_name,
+        },
+    );
 }
 
 #[tauri::command]

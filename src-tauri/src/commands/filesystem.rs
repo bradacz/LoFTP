@@ -127,7 +127,11 @@ fn resolve_list_path(path: &str) -> Result<std::path::PathBuf, String> {
     Ok(resolved)
 }
 
-fn format_symlink_error(requested_path: &str, symlink_path: &Path, error: &std::io::Error) -> String {
+fn format_symlink_error(
+    requested_path: &str,
+    symlink_path: &Path,
+    error: &std::io::Error,
+) -> String {
     let target = fs::read_link(symlink_path)
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| "<unknown target>".to_string());
@@ -148,7 +152,11 @@ fn format_symlink_error(requested_path: &str, symlink_path: &Path, error: &std::
     }
 }
 
-fn format_list_error(requested_path: &str, resolved_path: Option<&Path>, error: &std::io::Error) -> String {
+fn format_list_error(
+    requested_path: &str,
+    resolved_path: Option<&Path>,
+    error: &std::io::Error,
+) -> String {
     let path_label = resolved_path
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| requested_path.to_string());
@@ -288,7 +296,8 @@ pub fn fs_split_file(path: String, chunk_size: u64) -> Result<(), String> {
 
     loop {
         let part_path = format!("{}.part{:03}", path, index);
-        let mut output = fs::File::create(&part_path).map_err(|e| format!("Create part failed: {}", e))?;
+        let mut output =
+            fs::File::create(&part_path).map_err(|e| format!("Create part failed: {}", e))?;
         let mut written = 0_u64;
 
         while written < chunk_size {
@@ -322,7 +331,8 @@ pub fn fs_combine_files(parts: Vec<String>, output_path: String) -> Result<(), S
         return Err("No input parts selected.".to_string());
     }
 
-    let mut output = fs::File::create(&output_path).map_err(|e| format!("Create output failed: {}", e))?;
+    let mut output =
+        fs::File::create(&output_path).map_err(|e| format!("Create output failed: {}", e))?;
     for part in parts {
         let mut input = fs::File::open(&part).map_err(|e| format!("Open part failed: {}", e))?;
         std::io::copy(&mut input, &mut output).map_err(|e| format!("Combine failed: {}", e))?;

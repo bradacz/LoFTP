@@ -39,10 +39,11 @@ pub(crate) fn detect_file_type(path: &Path) -> String {
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico" | "bmp" => "image".to_string(),
         "pdf" => "pdf".to_string(),
         "rs" | "ts" | "tsx" | "js" | "jsx" | "json" | "html" | "css" | "scss" | "md" | "txt"
-        | "toml" | "yaml" | "yml" | "xml" | "sh" | "bash" | "zsh" | "py" | "rb" | "go"
-        | "java" | "c" | "cpp" | "h" | "hpp" | "sql" | "csv" | "env" | "gitignore"
-        | "editorconfig" | "lock" | "cfg" | "ini" | "conf" | "log" | "php" | "swift"
-        | "kt" | "vue" | "svelte" => "text".to_string(),
+        | "toml" | "yaml" | "yml" | "xml" | "sh" | "bash" | "zsh" | "py" | "rb" | "go" | "java"
+        | "c" | "cpp" | "h" | "hpp" | "sql" | "csv" | "env" | "gitignore" | "editorconfig"
+        | "lock" | "cfg" | "ini" | "conf" | "log" | "php" | "swift" | "kt" | "vue" | "svelte" => {
+            "text".to_string()
+        }
         _ => {
             // Try reading first bytes to detect
             if let Ok(bytes) = fs::read(path) {
@@ -119,7 +120,13 @@ pub fn fs_read_hex(path: String, offset: usize, length: usize) -> Result<Vec<Hex
                 .join(" ");
             let ascii = row
                 .iter()
-                .map(|b| if b.is_ascii_graphic() || *b == b' ' { *b as char } else { '.' })
+                .map(|b| {
+                    if b.is_ascii_graphic() || *b == b' ' {
+                        *b as char
+                    } else {
+                        '.'
+                    }
+                })
                 .collect();
             HexLine {
                 offset: offset + i * 16,

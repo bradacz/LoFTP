@@ -324,6 +324,12 @@ export interface Messages {
     errors: string;
     cancelAll: string;
   };
+  deleteStatus: {
+    deleting: string;
+    completed: string;
+    error: string;
+    remote: string;
+  };
   transferQueue: {
     title: string;
     active: string;
@@ -1013,6 +1019,12 @@ function createMessages(nativeName: string): Messages {
       errors: "{count} errors",
       cancelAll: "Cancel all transfers",
     },
+    deleteStatus: {
+      deleting: "Deleting",
+      completed: "Deleted {count} items",
+      error: "Delete error",
+      remote: "Remote",
+    },
     transferQueue: {
       title: "Transfer queue",
       active: "Active",
@@ -1182,6 +1194,7 @@ function withMeta(localeName: string, overrides: MessageOverrides = {}): Message
     ai: { ...baseEn.ai, ...(overrides.ai ?? {}) },
     codex: { ...baseEn.codex, ...(overrides.codex ?? {}) },
     transferStatus: { ...baseEn.transferStatus, ...(overrides.transferStatus ?? {}) },
+    deleteStatus: { ...baseEn.deleteStatus, ...(overrides.deleteStatus ?? {}) },
     transferQueue: { ...baseEn.transferQueue, ...(overrides.transferQueue ?? {}) },
     functionKeys: { ...baseEn.functionKeys, ...(overrides.functionKeys ?? {}) },
     contextMenu: { ...baseEn.contextMenu, ...(overrides.contextMenu ?? {}) },
@@ -1512,6 +1525,12 @@ export const messages: Record<Locale, Messages> = {
       completed: "Dokončeno {count} souborů",
       errors: "{count} chyb",
       cancelAll: "Zrušit všechny přenosy",
+    },
+    deleteStatus: {
+      deleting: "Maže se",
+      completed: "Smazáno {count} položek",
+      error: "Chyba mazání",
+      remote: "FTP/SFTP",
     },
     transferQueue: {
       title: "Fronta přenosů",

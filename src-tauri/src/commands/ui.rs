@@ -39,7 +39,8 @@ pub fn ui_show_context_menu(
 
     for (index, item) in payload.items.iter().enumerate() {
         if index > 0 && should_insert_separator(&payload.items[index - 1], item) {
-            let separator = PredefinedMenuItem::separator(&app).map_err(|error| error.to_string())?;
+            let separator =
+                PredefinedMenuItem::separator(&app).map_err(|error| error.to_string())?;
             menu.append(&separator).map_err(|error| error.to_string())?;
         }
 
@@ -76,7 +77,10 @@ pub fn handle_menu_event(app: &AppHandle, event_id: &str) {
     );
 }
 
-fn should_insert_separator(previous: &NativeContextMenuItem, current: &NativeContextMenuItem) -> bool {
+fn should_insert_separator(
+    previous: &NativeContextMenuItem,
+    current: &NativeContextMenuItem,
+) -> bool {
     context_menu_group(&previous.action) != context_menu_group(&current.action)
 }
 
@@ -87,8 +91,10 @@ fn context_menu_group(action: &str) -> u8 {
         "aiExplainFile" | "codexExplainFile" => 2,
         "openAsArchive" | "openArchive" | "createArchive" | "extractHere" | "extractTo" => 3,
         "copyTo" | "moveTo" | "newFile" | "newFolder" | "refresh" | "search" => 4,
-        "selectAll" | "deselectAll" | "invertSelection" | "selectByExtension" | "selectByPattern" | "compareFolders" => 5,
-        "properties" | "chmod" | "changeDate" | "calculateChecksum" | "batchRename" | "splitFile" | "combineFiles" => 6,
+        "selectAll" | "deselectAll" | "invertSelection" | "selectByExtension"
+        | "selectByPattern" | "compareFolders" => 5,
+        "properties" | "chmod" | "changeDate" | "calculateChecksum" | "batchRename"
+        | "splitFile" | "combineFiles" => 6,
         "rename" | "delete" => 7,
         _ => 6,
     }

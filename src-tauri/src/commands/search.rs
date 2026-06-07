@@ -35,10 +35,7 @@ fn matches_glob(pattern: &str, name: &str, case_sensitive: bool) -> bool {
 }
 
 #[tauri::command]
-pub async fn fs_search(
-    path: String,
-    options: SearchOptions,
-) -> Result<Vec<SearchResult>, String> {
+pub async fn fs_search(path: String, options: SearchOptions) -> Result<Vec<SearchResult>, String> {
     let base = Path::new(&path);
     if !base.exists() {
         return Err(format!("Directory not found: {}", path));

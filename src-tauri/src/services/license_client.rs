@@ -4,14 +4,18 @@ use sha2::{Digest, Sha256};
 const DEFAULT_LICENSE_API_BASE: &str = "";
 
 fn read_env(name: &str) -> Option<String> {
-    std::env::var(name).ok().filter(|value| !value.trim().is_empty())
+    std::env::var(name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
 }
 
 fn license_api_base() -> String {
     read_env("LOCALIOLIFTP_LICENSE_API_BASE")
         .or_else(|| read_env("VITE_LOCALIOLIFTP_LICENSE_API_BASE"))
         .or_else(|| option_env!("LOCALIOLIFTP_LICENSE_API_BASE").map(|value| value.to_string()))
-        .or_else(|| option_env!("VITE_LOCALIOLIFTP_LICENSE_API_BASE").map(|value| value.to_string()))
+        .or_else(|| {
+            option_env!("VITE_LOCALIOLIFTP_LICENSE_API_BASE").map(|value| value.to_string())
+        })
         .unwrap_or_else(|| DEFAULT_LICENSE_API_BASE.to_string())
 }
 

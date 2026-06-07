@@ -36,7 +36,7 @@ export function HostingDialog({ open, onClose, onSave, editHosting }: HostingDia
       setHost(editHosting.host);
       setPort(String(editHosting.port));
       setUsername(editHosting.username);
-      setPassword(editHosting.password);
+      setPassword("");
       setProtocol(editHosting.protocol === "ftp" && editHosting.useTls ? "ftps" : editHosting.protocol);
       setUseTls(editHosting.useTls ?? false);
       setSshKeyPath(editHosting.sshKeyPath ?? "");
@@ -76,7 +76,7 @@ export function HostingDialog({ open, onClose, onSave, editHosting }: HostingDia
   };
 
   const canSubmit = protocol === "bunnyStorage"
-    ? !!name && !!storageZoneName && !!password
+    ? !!name && !!storageZoneName && (!!password || !!editHosting)
     : !!name && !!host && !!username;
   const canTest = protocol === "bunnyStorage"
     ? !!storageZoneName && !!password

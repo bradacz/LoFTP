@@ -3,7 +3,7 @@ use crate::models::transfer::{
     is_cancelled, CancellationState, TransferOptions, TransferProgress, TransferRegistry,
     TransferStatus,
 };
-use crate::services::bunny_storage_client::BunnyStorageSession;
+use crate::services::{bunny_storage_client::BunnyStorageSession, credential_store};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -46,7 +46,8 @@ pub async fn bunny_storage_connect(
     storage_zone_name: String,
     access_key: String,
 ) -> Result<(), String> {
-    let session = BunnyStorageSession::new(&endpoint, &storage_zone_name, &access_key);
+    let resolved_access_key = resolve_access_key(&hosting_id, access_key)?;
+    let session = BunnyStorageSession::new(&endpoint, &storage_zone_name, &resolved_access_key);
     session.test_connection().await?;
     let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
     sessions.insert(hosting_id, session);
@@ -62,6 +63,15 @@ pub async fn bunny_storage_test_connection(
     BunnyStorageSession::new(&endpoint, &storage_zone_name, &access_key)
         .test_connection()
         .await
+}
+
+fn resolve_access_key(hosting_id: &str, access_key: String) -> Result<String, String> {
+    if !access_key.is_empty() {
+        return Ok(access_key);
+    }
+
+    credential_store::load_hosting_password(hosting_id)
+        .ok_or_else(|| "Bunny Storage access key is not configured.".to_string())
 }
 
 #[tauri::command]

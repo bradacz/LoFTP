@@ -21,6 +21,7 @@ import { useFileSelection } from "@/hooks/useFileSelection";
 import { useRemoteFiles } from "@/hooks/useRemoteFiles";
 import { useTransferOrchestration } from "@/hooks/useTransferOrchestration";
 import { useTransfers } from "@/hooks/useTransfers";
+import { useDeleteProgress } from "@/hooks/useDeleteProgress";
 import { useLicense } from "@/hooks/useLicense";
 import { useTheme } from "@/hooks/useTheme";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -92,6 +93,7 @@ const Index = () => {
   const rightLocal = useLocalFiles();
   const connection = useConnection();
   const { transfers, startUpload, startDownload } = useTransfers();
+  const deleteProgress = useDeleteProgress();
   const license = useLicense();
   const themeCtx = useTheme();
   const dirCompare = useDirectoryCompare();
@@ -124,6 +126,7 @@ const Index = () => {
     action: ContextMenuAction;
     panel: ContextMenuPanel;
     file: FileItem;
+    selectedNames: string[];
     title: string;
     message: string;
     danger?: boolean;
@@ -216,6 +219,8 @@ const Index = () => {
     activePanel,
     leftPanel: leftPanelData,
     rightPanel: rightPanelData,
+    deleteProgress,
+    remoteNotConnectedMessage: t("dialogs.remoteNotConnected"),
   });
 
   const transferFlow = useTransferOrchestration({
@@ -237,6 +242,8 @@ const Index = () => {
   const activeSel = activePanelData.selection;
 
   const isArchive = (name: string) => /\.(zip|tar|tar\.gz|tgz)$/i.test(name);
+  const deleteDialogBusy = deleteProgress.status?.status === "pending" || deleteProgress.status?.status === "deleting";
+  const deleteDialogFailed = deleteProgress.status?.status === "error";
 
   const handleDoubleClick = (panel: "left" | "right", file: FileItem) => {
     const pd = panel === "left" ? leftPanelData : rightPanelData;
@@ -502,8 +509,11 @@ const Index = () => {
     setContextInput({ action, panel, file, title, label, defaultValue });
   };
 
-  const requestContextConfirm = (action: ContextMenuAction, panel: ContextMenuPanel, file: FileItem, title: string, message: string, danger = false) => {
-    setContextConfirm({ action, panel, file, title, message, danger });
+  const requestContextConfirm = (action: ContextMenuAction, panel: ContextMenuPanel, file: FileItem, title: string, message: string, danger = false, selectedNames = getContextSelection(panel, file)) => {
+    if (action === "delete") {
+      deleteProgress.clear();
+    }
+    setContextConfirm({ action, panel, file, selectedNames, title, message, danger });
   };
 
   const renameInPanel = async (panel: ContextMenuPanel, file: FileItem, newName: string) => {
@@ -532,17 +542,50 @@ const Index = () => {
     pd.refresh();
   };
 
-  const deleteSelectionInPanel = async (panel: ContextMenuPanel, file: FileItem) => {
+  const deleteSelectionInPanel = async (panel: ContextMenuPanel, selectedNames: string[]) => {
     const pd = getPanelData(panel);
-    const names = getContextSelection(panel, file);
-    for (const name of names) {
-      if (pd.mode === "remote") {
-        if (!activeHost || connection.getStatus(activeHost.id) !== "connected") throw new Error(t("dialogs.remoteNotConnected"));
-        const item = pd.files.find((entry) => entry.name === name);
-        await connection.deleteRemote(activeHost.id, `${pd.path}/${name}`, item?.isDirectory ?? false, activeHost.protocol);
-      } else {
-        await fsDelete(`${pd.path}/${name}`);
+    const names = selectedNames.filter((name) => name !== "..");
+    if (names.length === 0) return;
+
+    const deleteId = crypto.randomUUID();
+    deleteProgress.begin({
+      id: deleteId,
+      mode: pd.mode,
+      rootPath: pd.path,
+      totalItems: names.length,
+    });
+
+    let completedItems = 0;
+    try {
+      for (const name of names) {
+        const targetPath = `${pd.path}/${name}`;
+        deleteProgress.step({
+          id: deleteId,
+          currentPath: targetPath,
+          currentName: name,
+          completedItems,
+        });
+
+        if (pd.mode === "remote") {
+          if (!activeHost || connection.getStatus(activeHost.id) !== "connected") throw new Error(t("dialogs.remoteNotConnected"));
+          const item = pd.files.find((entry) => entry.name === name);
+          await connection.deleteRemote(activeHost.id, targetPath, item?.isDirectory ?? false, activeHost.protocol, deleteId);
+        } else {
+          await fsDelete(targetPath);
+        }
+
+        completedItems += 1;
+        deleteProgress.step({
+          id: deleteId,
+          currentPath: targetPath,
+          currentName: name,
+          completedItems,
+        });
       }
+      deleteProgress.finish({ id: deleteId, completedItems });
+    } catch (error) {
+      deleteProgress.fail({ id: deleteId, error: String(error) });
+      throw error;
     }
     pd.selection.clear();
     pd.refresh();
@@ -550,11 +593,11 @@ const Index = () => {
 
   const handleContextConfirm = async () => {
     if (!contextConfirm) return;
-    const { action, panel, file } = contextConfirm;
-    setContextConfirm(null);
+    const { action, panel, selectedNames } = contextConfirm;
     try {
       if (action === "delete") {
-        await deleteSelectionInPanel(panel, file);
+        await deleteSelectionInPanel(panel, selectedNames);
+        setContextConfirm(null);
       }
     } catch (error) {
       toast.error(String(error));
@@ -801,13 +844,15 @@ const Index = () => {
       return;
     }
     if (action === "delete") {
+      const selectedNames = getContextSelection(panel, file);
       requestContextConfirm(
         action,
         panel,
         file,
         t("dialogs.deleteTitle"),
-        t("dialogs.deleteMessage", { count: getContextSelection(panel, file).length }),
-        true
+        t("dialogs.deleteMessage", { count: selectedNames.length }),
+        true,
+        selectedNames
       );
     }
   };
@@ -1562,6 +1607,9 @@ const Index = () => {
         message={t("dialogs.deleteMessage", { count: fileActions.pendingAction?.type === "delete" ? fileActions.pendingAction.count : 0 })}
         confirmLabel={t("common.delete")}
         danger
+        busy={deleteDialogBusy}
+        confirmDisabled={deleteDialogFailed}
+        progress={fileActions.pendingAction?.type === "delete" ? deleteProgress.status : null}
         onConfirm={fileActions.confirmDelete}
         onCancel={fileActions.cancelAction}
       />
@@ -1571,8 +1619,14 @@ const Index = () => {
         message={contextConfirm?.message ?? ""}
         confirmLabel={t("common.delete")}
         danger={contextConfirm?.danger}
+        busy={deleteDialogBusy}
+        confirmDisabled={deleteDialogFailed}
+        progress={contextConfirm?.action === "delete" ? deleteProgress.status : null}
         onConfirm={handleContextConfirm}
-        onCancel={() => setContextConfirm(null)}
+        onCancel={() => {
+          deleteProgress.clear();
+          setContextConfirm(null);
+        }}
       />
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} theme={themeCtx.theme} onThemeChange={themeCtx.setTheme} />
