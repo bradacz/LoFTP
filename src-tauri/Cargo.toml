@@ -1,6 +1,6 @@
 [package]
 name = "loftp"
-version = "1.0.1"
+version = "1.0.6"
 description = "FTP/SFTP client for macOS"
 authors = ["LoFTP"]
 license = "MIT"

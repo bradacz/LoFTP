@@ -6,6 +6,7 @@ use crate::models::transfer::{
 use crate::services::{credential_store, ftp_client::FtpSession};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -140,6 +141,7 @@ pub fn ftp_upload(
                         TransferStatus::Done,
                         ProgressSnapshot::single_file(&file_name, total_bytes, total_bytes),
                     );
+                    cancel_state.remove(&transfer_id);
                     return Ok(());
                 }
                 "rename" => {
@@ -179,7 +181,11 @@ pub fn ftp_upload(
                         }
                     }
                 }
-                _ => {} // overwrite, ask → proceed
+                "ask" => {
+                    cancel_state.remove(&transfer_id);
+                    return Err(format!("Destination already exists: {}", remote_path));
+                }
+                _ => {}
             }
         }
         if opts.create_dirs {
@@ -341,6 +347,10 @@ pub fn ftp_download(
                         }
                     }
                 }
+                "ask" => {
+                    cancel_state.remove(&transfer_id);
+                    return Err(format!("Destination already exists: {}", local_path));
+                }
                 _ => {}
             }
         }
@@ -446,8 +456,42 @@ pub fn ftp_upload_dir(
     let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
     let session = sessions.get_mut(&hosting_id).ok_or("Not connected")?;
 
+    let mut remote_dir = remote_dir;
+    if let Some(ref opts) = options {
+        if session.exists(&remote_dir)? {
+            match opts.overwrite.as_str() {
+                "skip" => {
+                    emit_progress(
+                        &app,
+                        &transfer_id,
+                        100,
+                        TransferStatus::Done,
+                        ProgressSnapshot::directory(
+                            &std::path::Path::new(&local_dir)
+                                .file_name()
+                                .map(|name| name.to_string_lossy().to_string())
+                                .unwrap_or_default(),
+                            0,
+                            0,
+                            None,
+                            0,
+                            0,
+                        ),
+                    );
+                    return Ok(());
+                }
+                "rename" => remote_dir = generate_unique_remote_name(session, &remote_dir)?,
+                "ask" => return Err(format!("Destination already exists: {}", remote_dir)),
+                _ => {}
+            }
+        }
+    }
     let _ = session.mkdir_p(&remote_dir);
-    let entries = collect_local_entries(&local_dir)?;
+    let follow_symlinks = options
+        .as_ref()
+        .map(|opts| opts.follow_symlinks)
+        .unwrap_or(true);
+    let entries = collect_local_entries(&local_dir, follow_symlinks)?;
     let dir_entries: Vec<&LocalDirEntry> = entries.iter().filter(|entry| entry.is_dir).collect();
     let file_entries: Vec<&LocalDirEntry> = entries.iter().filter(|entry| !entry.is_dir).collect();
     let total_files = file_entries.len();
@@ -465,7 +509,7 @@ pub fn ftp_upload_dir(
         .unwrap_or_default();
 
     for entry in dir_entries {
-        let remote_path = format!("{}/{}", remote_dir, entry.rel_path);
+        let remote_path = join_remote_path(&remote_dir, &entry.rel_path);
         let _ = session.mkdir_p(&remote_path);
     }
 
@@ -484,7 +528,7 @@ pub fn ftp_upload_dir(
     let mut transferred_bytes = 0u64;
 
     for entry in &file_entries {
-        let remote_file = format!("{}/{}", remote_dir, entry.rel_path);
+        let mut remote_file = join_remote_path(&remote_dir, &entry.rel_path);
 
         if let Some(parent) = std::path::Path::new(&remote_file).parent() {
             let ps = parent.to_string_lossy().to_string();
@@ -492,12 +536,37 @@ pub fn ftp_upload_dir(
         }
 
         if let Some(ref opts) = options {
-            if session.exists(&remote_file)? && opts.overwrite == "skip" {
-                completed_files += 1;
-                transferred_bytes += std::fs::metadata(&entry.full_path)
-                    .map(|m| m.len())
-                    .unwrap_or(0);
-                continue;
+            if session.exists(&remote_file)? {
+                match opts.overwrite.as_str() {
+                    "skip" => {
+                        completed_files += 1;
+                        transferred_bytes += std::fs::metadata(&entry.full_path)
+                            .map(|m| m.len())
+                            .unwrap_or(0);
+                        continue;
+                    }
+                    "rename" => remote_file = generate_unique_remote_name(session, &remote_file)?,
+                    "overwrite-older" => {
+                        let local_mtime = std::fs::metadata(&entry.full_path)
+                            .ok()
+                            .and_then(|m| m.modified().ok())
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_secs() as i64);
+                        if let (Some(local), Some(remote)) =
+                            (local_mtime, session.file_mtime(&remote_file))
+                        {
+                            if remote >= local {
+                                completed_files += 1;
+                                transferred_bytes += std::fs::metadata(&entry.full_path)
+                                    .map(|m| m.len())
+                                    .unwrap_or(0);
+                                continue;
+                            }
+                        }
+                    }
+                    "ask" => return Err(format!("Destination already exists: {}", remote_file)),
+                    _ => {}
+                }
             }
         }
 
@@ -598,6 +667,33 @@ pub fn ftp_download_dir(
     let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
     let session = sessions.get_mut(&hosting_id).ok_or("Not connected")?;
 
+    let mut local_dir = local_dir;
+    if std::path::Path::new(&local_dir).exists() {
+        if let Some(ref opts) = options {
+            match opts.overwrite.as_str() {
+                "skip" => {
+                    emit_progress(
+                        &app,
+                        &transfer_id,
+                        100,
+                        TransferStatus::Done,
+                        ProgressSnapshot::directory(
+                            &directory_label(&remote_dir),
+                            0,
+                            0,
+                            None,
+                            0,
+                            0,
+                        ),
+                    );
+                    return Ok(());
+                }
+                "rename" => local_dir = unique_local_path(&local_dir),
+                "ask" => return Err(format!("Destination already exists: {}", local_dir)),
+                _ => {}
+            }
+        }
+    }
     std::fs::create_dir_all(&local_dir).map_err(|e| format!("Create local dir failed: {}", e))?;
     let dir_name = directory_label(&remote_dir);
     let stats = collect_remote_dir_stats(session, &remote_dir)?;
@@ -653,10 +749,23 @@ fn download_dir_recursive(
         if item.name == ".." {
             continue;
         }
-        let remote_path = format!("{}/{}", remote_dir, item.name);
-        let local_path = format!("{}/{}", local_dir, item.name);
+        let remote_path = join_remote_path(&remote_dir, &item.name);
+        let mut local_path = std::path::Path::new(&local_dir)
+            .join(&item.name)
+            .to_string_lossy()
+            .to_string();
 
         if item.is_directory {
+            if let Some(ref opts) = options {
+                if std::path::Path::new(&local_path).exists() {
+                    match opts.overwrite.as_str() {
+                        "skip" => continue,
+                        "rename" => local_path = unique_local_path(&local_path),
+                        "ask" => return Err(format!("Destination already exists: {}", local_path)),
+                        _ => {}
+                    }
+                }
+            }
             std::fs::create_dir_all(&local_path)
                 .map_err(|e| format!("Create dir failed: {}", e))?;
             progress = download_dir_recursive(
@@ -672,10 +781,33 @@ fn download_dir_recursive(
             )?;
         } else {
             if let Some(ref opts) = options {
-                if std::path::Path::new(&local_path).exists() && opts.overwrite == "skip" {
-                    progress.files += 1;
-                    progress.bytes += item.size;
-                    continue;
+                if std::path::Path::new(&local_path).exists() {
+                    match opts.overwrite.as_str() {
+                        "skip" => {
+                            progress.files += 1;
+                            progress.bytes += item.size;
+                            continue;
+                        }
+                        "rename" => local_path = unique_local_path(&local_path),
+                        "overwrite-older" => {
+                            let local_mtime = std::fs::metadata(&local_path)
+                                .ok()
+                                .and_then(|m| m.modified().ok())
+                                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                                .map(|d| d.as_secs() as i64);
+                            if let (Some(local), Some(remote)) =
+                                (local_mtime, session.file_mtime(&remote_path))
+                            {
+                                if local >= remote {
+                                    progress.files += 1;
+                                    progress.bytes += item.size;
+                                    continue;
+                                }
+                            }
+                        }
+                        "ask" => return Err(format!("Destination already exists: {}", local_path)),
+                        _ => {}
+                    }
                 }
             }
             let current_file_name = relative_child_path(remote_dir, &remote_path);
@@ -715,8 +847,12 @@ pub fn ftp_mkdir(
     hosting_id: String,
     path: String,
 ) -> Result<(), String> {
+    validate_remote_operation_path(&path)?;
     let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
     let session = sessions.get_mut(&hosting_id).ok_or("Not connected")?;
+    if session.exists(&path)? {
+        return Err(format!("Folder already exists: {}", path));
+    }
     session.mkdir(&path)
 }
 
@@ -729,6 +865,7 @@ pub fn ftp_delete(
     is_dir: bool,
     delete_id: Option<String>,
 ) -> Result<(), String> {
+    validate_remote_delete_path(&path)?;
     let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
     let session = sessions.get_mut(&hosting_id).ok_or("Not connected")?;
     if is_dir {
@@ -748,10 +885,10 @@ fn delete_ftp_dir_recursive(
     emit_delete_progress(app, delete_id, path);
     let items = session.list_dir(path)?;
     for item in items {
-        if item.name == ".." {
+        if item.name == "." || item.name == ".." {
             continue;
         }
-        let child = format!("{}/{}", path, item.name);
+        let child = join_remote_path(path, &item.name);
         if item.is_directory {
             delete_ftp_dir_recursive(session, app, delete_id, &child)?;
         } else {
@@ -761,6 +898,41 @@ fn delete_ftp_dir_recursive(
     }
     emit_delete_progress(app, delete_id, path);
     session.delete_dir(path)
+}
+
+fn validate_remote_delete_path(path: &str) -> Result<(), String> {
+    let trimmed = path.trim_matches('/');
+    if trimmed.is_empty() {
+        return Err("Refusing to delete the remote root directory.".to_string());
+    }
+    if trimmed
+        .split('/')
+        .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+    {
+        return Err(format!("Invalid remote delete path: {}", path));
+    }
+    Ok(())
+}
+
+fn validate_remote_operation_path(path: &str) -> Result<(), String> {
+    let trimmed = path.trim_matches('/');
+    if trimmed.is_empty()
+        || trimmed
+            .split('/')
+            .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+    {
+        return Err(format!("Invalid remote path: {}", path));
+    }
+    Ok(())
+}
+
+fn join_remote_path(base: &str, name: &str) -> String {
+    let clean_name = name.trim_start_matches('/');
+    if base.is_empty() || base == "/" {
+        format!("/{}", clean_name)
+    } else {
+        format!("{}/{}", base.trim_end_matches('/'), clean_name)
+    }
 }
 
 fn emit_delete_progress(app: &AppHandle, delete_id: Option<&str>, path: &str) {
@@ -790,8 +962,13 @@ pub fn ftp_rename(
     from: String,
     to: String,
 ) -> Result<(), String> {
+    validate_remote_operation_path(&from)?;
+    validate_remote_operation_path(&to)?;
     let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
     let session = sessions.get_mut(&hosting_id).ok_or("Not connected")?;
+    if session.exists(&to)? {
+        return Err(format!("Rename target already exists: {}", to));
+    }
     session.rename(&from, &to)
 }
 
@@ -855,9 +1032,49 @@ fn generate_unique_name(path: &str) -> String {
     format!("{}/{}_copy{}", parent, stem, ext)
 }
 
-fn collect_local_entries(dir: &str) -> Result<Vec<LocalDirEntry>, String> {
+fn generate_unique_remote_name(session: &mut FtpSession, path: &str) -> Result<String, String> {
+    for index in 1..1000 {
+        let candidate = numbered_path(path, index);
+        if !session.exists(&candidate)? {
+            return Ok(candidate);
+        }
+    }
+    Err(format!("Could not create unique destination for {}", path))
+}
+
+fn numbered_path(path: &str, index: usize) -> String {
+    let p = std::path::Path::new(path);
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy())
+        .unwrap_or_default();
+    let ext = p.extension().map(|s| s.to_string_lossy());
+    let parent = p.parent().map(|p| p.to_string_lossy()).unwrap_or_default();
+    let name = match ext {
+        Some(ext) if !ext.is_empty() => format!("{}-{}.{}", stem, index, ext),
+        _ => format!("{}-{}", stem, index),
+    };
+    if parent.is_empty() {
+        name
+    } else {
+        format!("{}/{}", parent, name)
+    }
+}
+
+fn unique_local_path(path: &str) -> String {
+    for index in 1..1000 {
+        let candidate = numbered_path(path, index);
+        if !std::path::Path::new(&candidate).exists() {
+            return candidate;
+        }
+    }
+    numbered_path(path, 1000)
+}
+
+fn collect_local_entries(dir: &str, follow_symlinks: bool) -> Result<Vec<LocalDirEntry>, String> {
     let mut result = Vec::new();
-    collect_entries_inner(dir, dir, &mut result)?;
+    let mut visited = HashSet::new();
+    collect_entries_inner(dir, dir, &mut result, follow_symlinks, &mut visited)?;
     Ok(result)
 }
 
@@ -865,11 +1082,23 @@ fn collect_entries_inner(
     base: &str,
     current: &str,
     result: &mut Vec<LocalDirEntry>,
+    follow_symlinks: bool,
+    visited: &mut HashSet<std::path::PathBuf>,
 ) -> Result<(), String> {
+    let identity =
+        std::fs::canonicalize(current).unwrap_or_else(|_| std::path::PathBuf::from(current));
+    if !visited.insert(identity.clone()) {
+        return Err(format!("Symlink cycle detected while reading: {}", current));
+    }
     let entries = std::fs::read_dir(current).map_err(|e| format!("Read dir failed: {}", e))?;
     for entry in entries.flatten() {
         let path = entry.path();
         let full = path.to_string_lossy().to_string();
+        let metadata = std::fs::symlink_metadata(&path)
+            .map_err(|e| format!("Read local entry failed: {}", e))?;
+        if metadata.file_type().is_symlink() && !follow_symlinks {
+            return Err(format!("Symlink transfer disabled: {}", full));
+        }
         if path.is_dir() {
             let rel = full
                 .strip_prefix(base)
@@ -881,7 +1110,7 @@ fn collect_entries_inner(
                 full_path: full.clone(),
                 is_dir: true,
             });
-            collect_entries_inner(base, &full, result)?;
+            collect_entries_inner(base, &full, result, follow_symlinks, visited)?;
         } else {
             let rel = full
                 .strip_prefix(base)
@@ -895,6 +1124,7 @@ fn collect_entries_inner(
             });
         }
     }
+    visited.remove(&identity);
     Ok(())
 }
 
@@ -979,7 +1209,7 @@ fn collect_remote_dir_stats(
             continue;
         }
 
-        let remote_path = format!("{}/{}", remote_dir, item.name);
+        let remote_path = join_remote_path(&remote_dir, &item.name);
         if item.is_directory {
             let child_stats = collect_remote_dir_stats(session, &remote_path)?;
             stats.total_files += child_stats.total_files;
@@ -1006,4 +1236,25 @@ fn relative_child_path(root: &str, child: &str) -> String {
         .unwrap_or(child)
         .trim_start_matches('/')
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_remote_delete_path;
+
+    #[test]
+    fn delete_path_rejects_root_and_traversal() {
+        for path in ["", "/", "folder/../file", "folder/./file", "folder//file"] {
+            assert!(
+                validate_remote_delete_path(path).is_err(),
+                "accepted {}",
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn delete_path_accepts_normal_target() {
+        assert!(validate_remote_delete_path("/folder/file.txt").is_ok());
+    }
 }

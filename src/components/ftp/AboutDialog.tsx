@@ -6,7 +6,6 @@ import { useUpdater } from "@/hooks/useUpdater";
 import { Check, Download, Loader2 } from "lucide-react";
 import { useI18n } from "@/i18n";
 
-const websiteUrl = "https://www.mylocalio.com";
 const productWebsiteUrl = "https://www.loftp.space";
 
 interface AboutDialogProps {
@@ -58,7 +57,7 @@ export function AboutDialog({ open: isOpen, onClose }: AboutDialogProps) {
             />
             <h2 className="text-[20px] font-semibold text-foreground tracking-[-0.3px] mt-4">LoFTP</h2>
             <p className="text-[12px] text-muted-foreground mt-1 tabular-nums">
-              {t("about.version", { version: updater.status?.currentVersion ?? "1.0.0" })}
+              {t("about.version", { version: updater.status?.currentVersion ?? "1.0.6" })}
             </p>
             <p className="text-[12px] text-muted-foreground/60 text-center leading-relaxed mt-3 max-w-[300px]">
               {t("about.description")}
@@ -70,14 +69,6 @@ export function AboutDialog({ open: isOpen, onClose }: AboutDialogProps) {
             <div className="rounded-[10px] bg-secondary/40 dark:bg-secondary/20 border border-border/40 px-4 py-3.5">
               <p className="text-[10px] text-muted-foreground/60 text-center mb-1.5">{messages.legal.copyrightNotice}</p>
               <div className="flex items-center justify-center gap-1.5">
-                <button
-                  type="button"
-                  className="text-[12px] text-primary hover:underline transition-colors"
-                  onClick={() => open(websiteUrl)}
-                >
-                  www.mylocalio.com
-                </button>
-                <span className="text-[10px] text-muted-foreground/30">&middot;</span>
                 <button
                   type="button"
                   className="text-[12px] text-primary hover:underline transition-colors"

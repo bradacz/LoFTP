@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HardDrive, Globe, Usb, Home, FolderDown, Monitor, FileText, ChevronDown, Cloud } from "lucide-react";
 import { fsListVolumes, VolumeInfo, fsGetHome, fsListCloudStorages, CloudStorageInfo } from "@/lib/tauri";
 import { HostingConfig } from "@/types/ftp";
@@ -33,6 +33,24 @@ function getVolumeIcon(kind: string) {
   }
 }
 
+function comparablePath(path: string): string {
+  const archiveHostPath = path.split("!/")[0] || path;
+  return archiveHostPath.replace(/\/+$/, "") || "/";
+}
+
+function isPathOnVolume(path: string, volumePath: string): boolean {
+  const current = comparablePath(path);
+  const volume = comparablePath(volumePath);
+  if (volume === "/") return current.startsWith("/");
+  return current === volume || current.startsWith(`${volume}/`);
+}
+
+function findCurrentVolume(path: string, volumes: VolumeInfo[]) {
+  return volumes
+    .filter((volume) => isPathOnVolume(path, volume.path))
+    .sort((a, b) => comparablePath(b.path).length - comparablePath(a.path).length)[0];
+}
+
 export function DriveSelector({
   currentMode,
   currentPath,
@@ -50,13 +68,21 @@ export function DriveSelector({
   const [homePath, setHomePath] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
-  // Load volumes and cloud storages when opened
+  const refreshVolumes = useCallback(() => {
+    fsListVolumes().then(setVolumes).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (currentMode === "local") refreshVolumes();
+  }, [currentMode, currentPath, refreshVolumes]);
+
+  // Load cloud storages and quick paths when opened
   useEffect(() => {
     if (!open) return;
-    fsListVolumes().then(setVolumes).catch(() => {});
+    refreshVolumes();
     fsListCloudStorages().then(setCloudStorages).catch(() => {});
     fsGetHome().then(setHomePath).catch(() => {});
-  }, [open]);
+  }, [open, refreshVolumes]);
 
   // Close on click outside
   useEffect(() => {
@@ -81,6 +107,11 @@ export function DriveSelector({
     : currentPath.split("/").filter(Boolean).pop() || "/";
 
   const CurrentIcon = currentMode === "remote" ? Globe : Monitor;
+  const currentVolume = useMemo(
+    () => currentMode === "local" ? findCurrentVolume(currentPath, volumes) : undefined,
+    [currentMode, currentPath, volumes]
+  );
+  const currentFreeLabel = currentVolume?.freeBytes ? `${formatSize(currentVolume.freeBytes)} ${t("driveSelector.free")}` : "";
 
   return (
     <div ref={ref} className="relative flex-1">
@@ -89,7 +120,10 @@ export function DriveSelector({
         className="w-full flex items-center gap-2 px-2 py-1 rounded hover:bg-secondary transition-colors text-left"
       >
         <CurrentIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        <span className="text-xs font-medium text-foreground truncate">{currentLabel}</span>
+        <span className="flex-1 min-w-0 text-xs font-medium text-foreground truncate">{currentLabel}</span>
+        {currentFreeLabel && (
+          <span className="text-[10px] text-muted-foreground shrink-0">{currentFreeLabel}</span>
+        )}
         <ChevronDown className={cn("h-3 w-3 text-muted-foreground shrink-0 transition-transform", open && "rotate-180")} />
       </button>
 
@@ -103,7 +137,7 @@ export function DriveSelector({
               onClick={() => { onSelectVolume(vol.path); setOpen(false); }}
               className={cn(
                 "w-full flex items-center gap-2.5 px-3 py-1.5 text-xs hover:bg-file-hover transition-colors text-left",
-                currentMode === "local" && currentPath.startsWith(vol.path) && vol.path !== "/" && "bg-file-hover"
+                currentMode === "local" && currentVolume?.path === vol.path && "bg-file-hover"
               )}
             >
               {getVolumeIcon(vol.kind)}

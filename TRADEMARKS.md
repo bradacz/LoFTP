@@ -19,4 +19,4 @@ If you want to distribute a modified build publicly, the safest default is:
 
 Questions about official branding use can be directed to:
 
-- info@mylocalio.com
+- info@loftp.space

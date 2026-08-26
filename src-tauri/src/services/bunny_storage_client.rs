@@ -250,6 +250,20 @@ impl BunnyStorageSession {
             .any(|item| item.name == target))
     }
 
+    pub async fn file_mtime(&self, path: &str) -> Option<i64> {
+        let parent = parent_remote_path(path);
+        let target = basename(path);
+        let entries = self.list_dir(&parent).await.ok()?;
+        entries
+            .into_iter()
+            .find(|item| item.name == target)
+            .and_then(|item| {
+                chrono::NaiveDateTime::parse_from_str(&item.modified, "%Y-%m-%d %H:%M")
+                    .ok()
+                    .map(|dt| dt.and_utc().timestamp())
+            })
+    }
+
     fn url_for(&self, path: &str, trailing_slash: bool) -> Result<Url, String> {
         let mut url = Url::parse(&format!("{}/", self.endpoint.trim_end_matches('/')))
             .map_err(|e| format!("Invalid Bunny endpoint: {}", e))?;

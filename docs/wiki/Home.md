@@ -21,5 +21,5 @@ This wiki is the quick reference for:
 ## Project Links
 
 - Website: [www.loftp.space](https://www.loftp.space)
-- Company: [www.mylocalio.com](https://www.mylocalio.com)
+- Company: [www.loftp.space](https://www.loftp.space)
 - Source code: [GitHub repository](https://github.com/bradacz/LoFTP)

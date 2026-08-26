@@ -15,11 +15,13 @@ interface FilePanelProps {
   onNavigateUp?: () => void;
   selectedFiles: Set<string>;
   onSelect: (name: string, multi: boolean) => void;
-  onRangeSelect?: (name: string, files: FileItem[]) => void;
+  onClearSelection?: () => void;
+  onRangeSelect?: (name: string, files: FileItem[], additive?: boolean) => void;
   onUpdateLastClicked?: (index: number) => void;
   onDoubleClick: (file: FileItem) => void;
   onContextMenu?: (e: React.MouseEvent, file: FileItem) => void;
-  onDrop?: (fileNames: string[]) => void;
+  onDrop?: (fileNames: string[], operation: "copy" | "move") => void;
+  onActivate?: () => void;
   panelId: string;
   isFocused?: boolean;
   compareStatus?: Map<string, CompareStatus>;
@@ -140,11 +142,13 @@ export function FilePanel({
   onNavigateUp,
   selectedFiles,
   onSelect,
+  onClearSelection,
   onRangeSelect,
   onUpdateLastClicked,
   onDoubleClick,
   onContextMenu,
   onDrop,
+  onActivate,
   panelId,
   isFocused,
   compareStatus,
@@ -346,6 +350,14 @@ export function FilePanel({
     setFocusedIndex(0);
   }, [currentPath]);
 
+  useEffect(() => {
+    const validNames = new Set(filesWithParent.map((file) => file.name));
+    if (Array.from(selectedFiles).some((name) => !validNames.has(name))) {
+      onClearSelection?.();
+    }
+    setFocusedIndex((current) => Math.min(current, Math.max(sorted.length - 1, 0)));
+  }, [filesWithParent, onClearSelection, selectedFiles, sorted.length]);
+
   // Auto-scroll focused row into view
   const scrollToIndex = useCallback((idx: number) => {
     const row = rowRefs.current.get(idx);
@@ -361,6 +373,16 @@ export function FilePanel({
     }
   }, [isFocused]);
 
+  const selectRow = useCallback((index: number, multi: boolean) => {
+    const file = sorted[index];
+    if (!file) return;
+    if (file.name === "..") {
+      onClearSelection?.();
+      return;
+    }
+    onSelect(file.name, multi);
+  }, [onClearSelection, onSelect, sorted]);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const len = sorted.length;
     if (len === 0) return;
@@ -372,11 +394,11 @@ export function FilePanel({
         setFocusedIndex(next);
         scrollToIndex(next);
         if (e.shiftKey && onRangeSelect) {
-          onRangeSelect(sorted[next].name, sorted);
-        } else if (!e.shiftKey) {
-          onSelect(sorted[next].name, false);
+          onRangeSelect(sorted[next].name, sorted, e.ctrlKey || e.metaKey);
+        } else {
+          selectRow(next, false);
+          onUpdateLastClicked?.(next);
         }
-        onUpdateLastClicked?.(next);
         break;
       }
       case "ArrowUp": {
@@ -385,18 +407,22 @@ export function FilePanel({
         setFocusedIndex(prev);
         scrollToIndex(prev);
         if (e.shiftKey && onRangeSelect) {
-          onRangeSelect(sorted[prev].name, sorted);
-        } else if (!e.shiftKey) {
-          onSelect(sorted[prev].name, false);
+          onRangeSelect(sorted[prev].name, sorted, e.ctrlKey || e.metaKey);
+        } else {
+          selectRow(prev, false);
+          onUpdateLastClicked?.(prev);
         }
-        onUpdateLastClicked?.(prev);
         break;
       }
       case "Home": {
         e.preventDefault();
         setFocusedIndex(0);
         scrollToIndex(0);
-        onSelect(sorted[0].name, false);
+        if (e.shiftKey && onRangeSelect) onRangeSelect(sorted[0].name, sorted, e.ctrlKey || e.metaKey);
+        else {
+          selectRow(0, false);
+          onUpdateLastClicked?.(0);
+        }
         break;
       }
       case "End": {
@@ -404,7 +430,11 @@ export function FilePanel({
         const last = len - 1;
         setFocusedIndex(last);
         scrollToIndex(last);
-        onSelect(sorted[last].name, false);
+        if (e.shiftKey && onRangeSelect) onRangeSelect(sorted[last].name, sorted, e.ctrlKey || e.metaKey);
+        else {
+          selectRow(last, false);
+          onUpdateLastClicked?.(last);
+        }
         break;
       }
       case "PageDown": {
@@ -412,7 +442,11 @@ export function FilePanel({
         const next = Math.min(focusedIndex + 15, len - 1);
         setFocusedIndex(next);
         scrollToIndex(next);
-        onSelect(sorted[next].name, false);
+        if (e.shiftKey && onRangeSelect) onRangeSelect(sorted[next].name, sorted, e.ctrlKey || e.metaKey);
+        else {
+          selectRow(next, false);
+          onUpdateLastClicked?.(next);
+        }
         break;
       }
       case "PageUp": {
@@ -420,7 +454,11 @@ export function FilePanel({
         const prev = Math.max(focusedIndex - 15, 0);
         setFocusedIndex(prev);
         scrollToIndex(prev);
-        onSelect(sorted[prev].name, false);
+        if (e.shiftKey && onRangeSelect) onRangeSelect(sorted[prev].name, sorted, e.ctrlKey || e.metaKey);
+        else {
+          selectRow(prev, false);
+          onUpdateLastClicked?.(prev);
+        }
         break;
       }
       case "Enter": {
@@ -433,7 +471,8 @@ export function FilePanel({
         e.preventDefault();
         const file = sorted[focusedIndex];
         if (file && file.name !== "..") {
-          onSelect(file.name, true); // toggle with multi=true
+          selectRow(focusedIndex, true); // toggle with multi=true
+          onUpdateLastClicked?.(focusedIndex);
           // Move down after space select
           const next = Math.min(focusedIndex + 1, len - 1);
           setFocusedIndex(next);
@@ -445,7 +484,8 @@ export function FilePanel({
         e.preventDefault();
         const file = sorted[focusedIndex];
         if (file && file.name !== "..") {
-          onSelect(file.name, true);
+          selectRow(focusedIndex, true);
+          onUpdateLastClicked?.(focusedIndex);
           const next = Math.min(focusedIndex + 1, len - 1);
           setFocusedIndex(next);
           scrollToIndex(next);
@@ -471,13 +511,14 @@ export function FilePanel({
           if (found >= 0) {
             setFocusedIndex(found);
             scrollToIndex(found);
-            onSelect(sorted[found].name, false);
+            selectRow(found, false);
+            onUpdateLastClicked?.(found);
           }
         }
         break;
       }
     }
-  }, [sorted, focusedIndex, onSelect, onDoubleClick, onRangeSelect, onUpdateLastClicked, scrollToIndex]);
+  }, [sorted, focusedIndex, onDoubleClick, onRangeSelect, onUpdateLastClicked, scrollToIndex, selectRow]);
 
   const IconComp = icon === "local" ? HardDrive : Globe;
   const gridTemplateColumns = useMemo(
@@ -506,14 +547,14 @@ export function FilePanel({
         const sourcePanel = e.dataTransfer.getData("application/x-panel-id");
         if (sourcePanel !== panelId && onDrop) {
           const fileNames = JSON.parse(e.dataTransfer.getData("application/x-files") || "[]");
-          if (fileNames.length > 0) onDrop(fileNames);
+          if (fileNames.length > 0) onDrop(fileNames, e.altKey ? "move" : "copy");
         }
       }}
     >
       {/* Panel header with path */}
       <div className="flex items-center gap-2 px-3 py-2 bg-panel-header border-b border-border">
-        <IconComp className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-xs font-medium text-muted-foreground">{title}</span>
+        <IconComp className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm font-medium text-muted-foreground">{title}</span>
         <div className="flex-1 flex items-center gap-1 ml-2">
           <button
             onClick={() => {
@@ -526,7 +567,7 @@ export function FilePanel({
             }}
             className="p-0.5 rounded hover:bg-secondary transition-colors"
           >
-            <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
           </button>
           <PathBar path={currentPath} onNavigate={onNavigate} />
         </div>
@@ -534,7 +575,7 @@ export function FilePanel({
 
       {/* Column headers */}
       <div
-        className="grid px-3 py-1.5 bg-panel-header border-b border-border text-[11px] font-medium text-muted-foreground uppercase tracking-wider"
+        className="grid px-3 py-1.5 bg-panel-header border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider"
         style={{ gridTemplateColumns }}
       >
         <button onClick={() => handleSort("name")} className="text-left hover:text-foreground transition-colors">
@@ -590,29 +631,36 @@ export function FilePanel({
                   : [file.name];
                 e.dataTransfer.setData("application/x-panel-id", panelId);
                 e.dataTransfer.setData("application/x-files", JSON.stringify(dragFiles));
-                e.dataTransfer.effectAllowed = "copy";
+                e.dataTransfer.effectAllowed = "copyMove";
               }}
               onClick={(e) => {
+                onActivate?.();
+                listRef.current?.focus({ preventScroll: true });
                 setFocusedIndex(index);
                 if (e.shiftKey && onRangeSelect) {
-                  onRangeSelect(file.name, sorted);
-                } else {
+                  onRangeSelect(file.name, sorted, e.metaKey || e.ctrlKey);
+                } else if (file.name !== "..") {
                   onSelect(file.name, e.metaKey || e.ctrlKey);
+                  onUpdateLastClicked?.(index);
+                } else {
+                  onClearSelection?.();
+                  onUpdateLastClicked?.(index);
                 }
-                onUpdateLastClicked?.(index);
               }}
               onDoubleClick={() => onDoubleClick(file)}
               onContextMenu={(e) => {
                 e.preventDefault();
+                onActivate?.();
+                listRef.current?.focus({ preventScroll: true });
                 setFocusedIndex(index);
-                if (!isSelected) onSelect(file.name, false);
+                if (!isSelected && file.name !== "..") onSelect(file.name, false);
                 onContextMenu?.(e, file);
               }}
               className={cn(
-                "grid px-3 py-1 cursor-pointer transition-colors text-xs font-mono-file",
+                "grid px-3 py-1 cursor-pointer transition-colors text-[14px] font-mono-file",
                 isSelected
                   ? "bg-file-selected text-file-selected-text"
-                  : cmpClass || "hover:bg-file-hover",
+                  : cmpClass,
                 isFocusedRow && !isSelected && "ring-1 ring-inset ring-primary/40",
                 isFocusedRow && isSelected && "ring-1 ring-inset ring-primary"
               )}
@@ -649,22 +697,28 @@ const StatusBar = memo(function StatusBar({ files, selectedFiles }: { files: Fil
     return { fileCount, dirCount, totalSize };
   }, [files]);
 
-  const selectionSize = useMemo(() => {
-    if (selectedFiles.size === 0) return 0;
-    return files.filter((f) => selectedFiles.has(f.name)).reduce((s, f) => s + f.size, 0);
+  const selectedEntries = useMemo(() => {
+    if (selectedFiles.size === 0) return [];
+    return files.filter((f) => f.name !== ".." && selectedFiles.has(f.name));
   }, [files, selectedFiles]);
 
+  const selectionSize = useMemo(() => {
+    return selectedEntries.reduce((s, f) => s + f.size, 0);
+  }, [selectedEntries]);
+
+  const selectedCount = selectedEntries.length;
+
   return (
-    <div className="px-3 py-1.5 bg-status border-t border-border text-[11px] text-muted-foreground flex justify-between">
+    <div className="px-3 py-1.5 bg-status border-t border-border text-xs text-muted-foreground flex justify-between">
       <span>
         {t("filePanel.filesAndDirs", { files: stats.fileCount, dirs: stats.dirCount })}
         {" | "}
         {formatSize(stats.totalSize)}
       </span>
       <span>
-        {selectedFiles.size > 0 && (
+        {selectedCount > 0 && (
           <span className="text-primary font-medium">
-            {t("common.selectedCount", { count: selectedFiles.size })} ({formatSize(selectionSize)})
+            {t("common.selectedCount", { count: selectedCount })} ({formatSize(selectionSize)})
           </span>
         )}
       </span>
@@ -746,7 +800,7 @@ function PathBar({ path, onNavigate }: { path: string; onNavigate: (path: string
     return (
       <input
         ref={inputRef}
-        className="flex-1 bg-background border border-primary rounded px-2 py-1 text-xs font-mono-file text-foreground outline-none"
+        className="flex-1 bg-background border border-primary rounded px-2 py-1 text-[13px] font-mono-file text-foreground outline-none"
         value={editValue}
         onChange={(e) => setEditValue(e.target.value)}
         onKeyDown={(e) => {
@@ -760,7 +814,7 @@ function PathBar({ path, onNavigate }: { path: string; onNavigate: (path: string
 
   return (
     <div
-      className="flex-1 flex items-center gap-1 bg-secondary rounded px-2 py-1 text-xs font-mono-file text-foreground group cursor-text hover:bg-secondary/80 transition-colors"
+      className="flex-1 flex items-center gap-1 bg-secondary rounded px-2 py-1 text-[13px] font-mono-file text-foreground group cursor-text hover:bg-secondary/80 transition-colors"
       onClick={startEdit}
       title="Kliknutím upravit cestu"
     >

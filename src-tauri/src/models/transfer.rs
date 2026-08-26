@@ -143,4 +143,19 @@ pub struct TransferOptions {
     pub create_dirs: bool,
     pub verify_after_transfer: bool,
 }
+
+impl Default for TransferOptions {
+    fn default() -> Self {
+        Self {
+            mode: "auto".to_string(),
+            overwrite: "overwrite-older".to_string(),
+            resume: true,
+            preserve_timestamps: true,
+            preserve_permissions: false,
+            follow_symlinks: true,
+            create_dirs: true,
+            verify_after_transfer: false,
+        }
+    }
+}
 const MAX_TRANSFER_HISTORY: usize = 1000;

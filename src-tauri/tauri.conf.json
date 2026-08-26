@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
   "productName": "LoFTP",
-  "version": "1.0.1",
+  "version": "1.0.6",
   "identifier": "com.loftp.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -23,8 +23,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://api.mylocalio.com https://api.stripe.com; style-src 'self' 'unsafe-inline'",
-      "devCsp": "default-src 'self' http://localhost:1420 http://127.0.0.1:1420; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:1420 http://127.0.0.1:1420; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420 http://127.0.0.1:1420 ws://127.0.0.1:1420 https://api.mylocalio.com https://api.stripe.com; style-src 'self' 'unsafe-inline' http://localhost:1420 http://127.0.0.1:1420; img-src 'self' data: blob: http://localhost:1420 http://127.0.0.1:1420"
+      "csp": "default-src 'self'; connect-src 'self' https://api.loftp.space https://api.stripe.com; style-src 'self' 'unsafe-inline'",
+      "devCsp": "default-src 'self' http://localhost:1420 http://127.0.0.1:1420; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:1420 http://127.0.0.1:1420; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420 http://127.0.0.1:1420 ws://127.0.0.1:1420 https://api.loftp.space https://api.stripe.com; style-src 'self' 'unsafe-inline' http://localhost:1420 http://127.0.0.1:1420; img-src 'self' data: blob: http://localhost:1420 http://127.0.0.1:1420"
     }
   },
   "bundle": {
@@ -49,7 +49,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://downloads.loftp.mylocalio.com/stable/latest.json"
+        "https://downloads.loftp.space/stable/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZDOTQ2MUE1NDlDQjI1MjAKUldRZ0pjdEpwV0dVL0FldFppQ3dHajhzRm5tQ3dMUStzKzFYOVYyVTU4WmpNcjdtV0xaRXZ3UzgK"
     }

@@ -1,7 +1,9 @@
 import { useState, useCallback } from "react";
-import { fsDelete, fsMkdir, fsRename } from "@/lib/tauri";
+import { fsDeleteMany, fsMkdir, fsRename } from "@/lib/tauri";
 import { FileItem, HostingConfig, HostingProtocol } from "@/types/ftp";
 import type { DeleteProgressController } from "@/hooks/useDeleteProgress";
+import { joinPath, validateEntryName } from "@/lib/utils";
+import { toast } from "@/components/ui/sonner";
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
 interface ConnectionLike {
@@ -19,6 +21,7 @@ interface SelectionLike {
 interface PanelData {
   mode: "local" | "remote";
   path: string;
+  isArchiveView?: boolean;
   files: FileItem[];
   selection: SelectionLike;
   navigate: (path: string) => void;
@@ -61,70 +64,85 @@ export function useFileActions({
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   const active = activePanel === "left" ? leftPanel : rightPanel;
-  const inactive = activePanel === "left" ? rightPanel : leftPanel;
-
   const isRemote = active.mode === "remote";
+  const isArchiveView = active.mode === "local" && active.isArchiveView;
   const isConnected = !!activeHost && connection.getStatus(activeHost.id) === "connected";
 
   // --- Rename ---
   const rename = useCallback(() => {
+    if (isArchiveView) return;
     if (active.selection.selected.size !== 1) return;
     if (isRemote && activeHost?.protocol === "bunnyStorage") return;
     const oldName = Array.from(active.selection.selected)[0];
     setPendingAction({ type: "rename", oldName });
-  }, [active.selection.selected, activeHost?.protocol, isRemote]);
+  }, [active.selection.selected, activeHost?.protocol, isArchiveView, isRemote]);
 
   const confirmRename = useCallback(async (newName: string) => {
     if (pendingAction?.type !== "rename") return;
     const oldName = pendingAction.oldName;
-    setPendingAction(null);
-    if (newName === oldName) return;
 
     try {
-      if (isRemote && activeHost && isConnected) {
-        if (activeHost.protocol === "bunnyStorage") return;
+      const safeName = validateEntryName(newName);
+      if (safeName === oldName) {
+        setPendingAction(null);
+        return;
+      }
+      if (isRemote) {
+        if (!activeHost || !isConnected) throw new Error(remoteNotConnectedMessage);
+        if (activeHost.protocol === "bunnyStorage") throw new Error("Bunny Storage does not support rename.");
         await connection.renameRemote(
           activeHost.id,
-          `${active.path}/${oldName}`,
-          `${active.path}/${newName}`,
+          joinPath(active.path, oldName),
+          joinPath(active.path, safeName),
           activeHost.protocol
         );
       } else {
-        await fsRename(`${active.path}/${oldName}`, `${active.path}/${newName}`);
+        await fsRename(joinPath(active.path, oldName), joinPath(active.path, safeName));
       }
+      setPendingAction(null);
       active.selection.clear();
       active.refresh();
     } catch (e) {
       console.error("Rename failed:", e);
+      toast.error("Rename failed", { description: String(e) });
     }
-  }, [pendingAction, isRemote, activeHost, isConnected, connection, active]);
+  }, [pendingAction, isRemote, activeHost, isConnected, connection, active, remoteNotConnectedMessage]);
 
   // --- Create Folder ---
   const createFolder = useCallback(() => {
+    if (isArchiveView) return;
     setPendingAction({ type: "mkdir" });
-  }, []);
+  }, [isArchiveView]);
 
   const confirmCreateFolder = useCallback(async (name: string) => {
-    setPendingAction(null);
     try {
-      if (isRemote && activeHost && isConnected) {
-        await connection.mkdirRemote(activeHost.id, `${active.path}/${name}`, activeHost.protocol);
+      const safeName = validateEntryName(name);
+      if (isRemote) {
+        if (!activeHost || !isConnected) throw new Error(remoteNotConnectedMessage);
+        await connection.mkdirRemote(activeHost.id, joinPath(active.path, safeName), activeHost.protocol);
       } else {
-        await fsMkdir(`${active.path}/${name}`);
+        await fsMkdir(joinPath(active.path, safeName));
       }
+      setPendingAction(null);
       active.refresh();
     } catch (e) {
       console.error("Mkdir failed:", e);
+      toast.error("Create folder failed", { description: String(e) });
     }
-  }, [isRemote, activeHost, isConnected, connection, active]);
+  }, [isRemote, activeHost, isConnected, connection, active, remoteNotConnectedMessage]);
 
   // --- Delete ---
   const remove = useCallback(() => {
-    const names = Array.from(active.selection.selected).filter((name) => name !== "..");
-    if (names.length === 0) return;
+    if (isArchiveView) return;
+    const validNames = new Set(active.files.filter((file) => file.name !== "..").map((file) => file.name));
+    const names = Array.from(active.selection.selected).filter((name) => validNames.has(name));
+    if (names.length === 0) {
+      active.selection.clear();
+      return;
+    }
     const targets = names.map((name) => ({
       name,
-      path: `${active.path}/${name}`,
+      path: joinPath(active.path, name),
       isDirectory: active.files.find((file) => file.name === name)?.isDirectory ?? false,
     }));
     deleteProgress?.clear();
@@ -138,7 +156,7 @@ export function useFileActions({
       remoteHostingId: isRemote ? activeHost?.id : undefined,
       remoteProtocol: isRemote ? activeHost?.protocol : undefined,
     });
-  }, [active.selection.selected, active.files, active.path, active.mode, activePanel, activeHost?.id, activeHost?.protocol, deleteProgress, isRemote]);
+  }, [active.selection, active.files, active.path, active.mode, activePanel, activeHost?.id, activeHost?.protocol, deleteProgress, isArchiveView, isRemote]);
 
   const confirmDelete = useCallback(async () => {
     if (pendingAction?.type !== "delete") return;
@@ -158,6 +176,30 @@ export function useFileActions({
     let completedItems = 0;
     const errors: string[] = [];
 
+    if (pendingAction.mode === "local") {
+      deleteProgress?.step({
+        id: deleteId,
+        currentPath: pendingAction.path,
+        currentName: pendingAction.path,
+        completedItems: 0,
+      });
+
+      try {
+        await fsDeleteMany(pendingAction.targets.map((target) => target.path), deleteId);
+        completedItems = pendingAction.targets.length;
+        deleteProgress?.finish({ id: deleteId, completedItems });
+        setPendingAction(null);
+      } catch (e) {
+        console.error("Delete failed:", e);
+        deleteProgress?.fail({ id: deleteId, error: String(e) });
+      }
+
+      const panel = pendingAction.panel === "left" ? leftPanel : rightPanel;
+      if (completedItems === pendingAction.targets.length) panel.selection.clear();
+      panel.refresh();
+      return;
+    }
+
     for (const target of pendingAction.targets) {
       deleteProgress?.step({
         id: deleteId,
@@ -167,20 +209,16 @@ export function useFileActions({
       });
 
       try {
-        if (pendingAction.mode === "remote") {
-          if (!pendingAction.remoteHostingId || !pendingAction.remoteProtocol || connection.getStatus(pendingAction.remoteHostingId) !== "connected") {
-            throw new Error(remoteNotConnectedMessage);
-          }
-          await connection.deleteRemote(
-            pendingAction.remoteHostingId,
-            target.path,
-            target.isDirectory,
-            pendingAction.remoteProtocol,
-            deleteId
-          );
-        } else {
-          await fsDelete(target.path);
+        if (!pendingAction.remoteHostingId || !pendingAction.remoteProtocol || connection.getStatus(pendingAction.remoteHostingId) !== "connected") {
+          throw new Error(remoteNotConnectedMessage);
         }
+        await connection.deleteRemote(
+          pendingAction.remoteHostingId,
+          target.path,
+          target.isDirectory,
+          pendingAction.remoteProtocol,
+          deleteId
+        );
         completedItems += 1;
         deleteProgress?.step({
           id: deleteId,
@@ -202,7 +240,7 @@ export function useFileActions({
     }
 
     const panel = pendingAction.panel === "left" ? leftPanel : rightPanel;
-    panel.selection.clear();
+    if (errors.length === 0) panel.selection.clear();
     panel.refresh();
   }, [pendingAction, connection, leftPanel, rightPanel, deleteProgress, remoteNotConnectedMessage]);
 
@@ -227,8 +265,6 @@ export function useFileActions({
     confirmDelete,
     cancelAction,
     pendingAction,
-    hasSelection: active.selection.selected.size > 0,
-    resolveActiveItem: (name: string) => active.files.find((file) => file.name === name),
-    resolveInactiveItem: (name: string) => inactive.files.find((file) => file.name === name),
+    hasSelection: active.files.some((file) => file.name !== ".." && active.selection.selected.has(file.name)),
   };
 }

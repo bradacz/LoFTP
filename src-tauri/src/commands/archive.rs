@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,6 +45,7 @@ pub fn archive_extract(
     archive_path: String,
     target_dir: String,
     files: Option<Vec<String>>,
+    strip_prefix: Option<String>,
 ) -> Result<(), String> {
     let p = Path::new(&archive_path);
     let ext = p
@@ -52,13 +53,29 @@ pub fn archive_extract(
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
+    let normalized_strip_prefix = normalize_inner_path(strip_prefix.as_deref());
 
     fs::create_dir_all(&target_dir).map_err(|e| format!("Create dir failed: {}", e))?;
 
     match ext.as_str() {
-        "zip" => extract_zip(&archive_path, &target_dir, files),
-        "gz" | "tgz" => extract_tar_gz(&archive_path, &target_dir, files),
-        "tar" => extract_tar(&archive_path, &target_dir, files),
+        "zip" => extract_zip(
+            &archive_path,
+            &target_dir,
+            files.as_deref(),
+            &normalized_strip_prefix,
+        ),
+        "gz" | "tgz" => extract_tar_gz(
+            &archive_path,
+            &target_dir,
+            files.as_deref(),
+            &normalized_strip_prefix,
+        ),
+        "tar" => extract_tar(
+            &archive_path,
+            &target_dir,
+            files.as_deref(),
+            &normalized_strip_prefix,
+        ),
         _ => Err(format!("Unsupported format: .{}", ext)),
     }
 }
@@ -69,6 +86,9 @@ pub fn archive_create(
     source_paths: Vec<String>,
     base_dir: String,
 ) -> Result<(), String> {
+    if Path::new(&output_path).symlink_metadata().is_ok() {
+        return Err(format!("Archive already exists: {}", output_path));
+    }
     let ext = Path::new(&output_path)
         .extension()
         .and_then(|e| e.to_str())
@@ -260,6 +280,57 @@ fn parent_inner_path(inner_path: &str) -> String {
         .unwrap_or_default()
 }
 
+fn normalize_archive_entry_path(path: &str) -> String {
+    path.replace('\\', "/").trim_matches('/').to_string()
+}
+
+fn entry_matches_filter(entry_name: &str, files: Option<&[String]>) -> bool {
+    let Some(filter) = files else {
+        return true;
+    };
+
+    filter.iter().any(|selected| {
+        let selected = normalize_archive_entry_path(selected);
+        !selected.is_empty()
+            && (entry_name == selected || entry_name.starts_with(&format!("{}/", selected)))
+    })
+}
+
+fn strip_archive_prefix(entry_name: &str, strip_prefix: &str) -> String {
+    if strip_prefix.is_empty() {
+        return entry_name.to_string();
+    }
+
+    if entry_name == strip_prefix {
+        return String::new();
+    }
+
+    let prefix = format!("{}/", strip_prefix);
+    entry_name
+        .strip_prefix(&prefix)
+        .unwrap_or(entry_name)
+        .to_string()
+}
+
+fn safe_archive_output_path(target: &str, relative_path: &str) -> Result<PathBuf, String> {
+    let normalized = normalize_archive_entry_path(relative_path);
+    let mut output = PathBuf::from(target);
+
+    if normalized.is_empty() {
+        return Ok(output);
+    }
+
+    for component in Path::new(&normalized).components() {
+        match component {
+            Component::Normal(part) => output.push(part),
+            Component::CurDir => {}
+            _ => return Err(format!("Unsafe archive entry path: {}", relative_path)),
+        }
+    }
+
+    Ok(output)
+}
+
 fn read_archive_entry(archive_path: &str, entry_path: &str) -> Result<Vec<u8>, String> {
     let archive_kind = archive_extension_kind(archive_path)?;
     match archive_kind.as_str() {
@@ -383,7 +454,12 @@ fn list_zip(path: &str) -> Result<Vec<ArchiveEntry>, String> {
     Ok(entries)
 }
 
-fn extract_zip(path: &str, target: &str, files: Option<Vec<String>>) -> Result<(), String> {
+fn extract_zip(
+    path: &str,
+    target: &str,
+    files: Option<&[String]>,
+    strip_prefix: &str,
+) -> Result<(), String> {
     let file = fs::File::open(path).map_err(|e| format!("Open error: {}", e))?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("ZIP error: {}", e))?;
 
@@ -391,19 +467,26 @@ fn extract_zip(path: &str, target: &str, files: Option<Vec<String>>) -> Result<(
         let mut f = archive
             .by_index(i)
             .map_err(|e| format!("ZIP entry error: {}", e))?;
-        let name = f.name().to_string();
-
-        // If specific files requested, filter
-        if let Some(ref filter) = files {
-            if !filter.iter().any(|n| name.starts_with(n.as_str())) {
-                continue;
-            }
+        let name = normalize_archive_entry_path(f.name());
+        if name.is_empty() {
+            continue;
         }
 
-        let out_path = Path::new(target).join(&name);
+        if !entry_matches_filter(&name, files) {
+            continue;
+        }
+
+        let relative_name = strip_archive_prefix(&name, strip_prefix);
+        let out_path = safe_archive_output_path(target, &relative_name)?;
         if f.is_dir() {
             fs::create_dir_all(&out_path).map_err(|e| format!("Mkdir error: {}", e))?;
         } else {
+            if out_path.symlink_metadata().is_ok() {
+                return Err(format!(
+                    "Extraction target already exists: {}",
+                    out_path.display()
+                ));
+            }
             if let Some(parent) = out_path.parent() {
                 fs::create_dir_all(parent).map_err(|e| format!("Mkdir error: {}", e))?;
             }
@@ -543,21 +626,68 @@ fn list_tar_gz(path: &str) -> Result<Vec<ArchiveEntry>, String> {
     Ok(entries)
 }
 
-fn extract_tar(path: &str, target: &str, _files: Option<Vec<String>>) -> Result<(), String> {
+fn extract_tar(
+    path: &str,
+    target: &str,
+    files: Option<&[String]>,
+    strip_prefix: &str,
+) -> Result<(), String> {
     let file = fs::File::open(path).map_err(|e| format!("Open error: {}", e))?;
     let mut archive = tar::Archive::new(file);
-    archive
-        .unpack(target)
-        .map_err(|e| format!("Extract error: {}", e))?;
-    Ok(())
+    extract_tar_like(&mut archive, target, files, strip_prefix)
 }
 
-fn extract_tar_gz(path: &str, target: &str, _files: Option<Vec<String>>) -> Result<(), String> {
+fn extract_tar_gz(
+    path: &str,
+    target: &str,
+    files: Option<&[String]>,
+    strip_prefix: &str,
+) -> Result<(), String> {
     let file = fs::File::open(path).map_err(|e| format!("Open error: {}", e))?;
     let decoder = flate2::read::GzDecoder::new(file);
     let mut archive = tar::Archive::new(decoder);
-    archive
-        .unpack(target)
-        .map_err(|e| format!("Extract error: {}", e))?;
+    extract_tar_like(&mut archive, target, files, strip_prefix)
+}
+
+fn extract_tar_like<R: Read>(
+    archive: &mut tar::Archive<R>,
+    target: &str,
+    files: Option<&[String]>,
+    strip_prefix: &str,
+) -> Result<(), String> {
+    for entry in archive.entries().map_err(|e| format!("TAR error: {}", e))? {
+        let mut entry = entry.map_err(|e| format!("TAR entry error: {}", e))?;
+        let entry_name = entry
+            .path()
+            .map_err(|e| format!("TAR path error: {}", e))?
+            .to_string_lossy()
+            .to_string();
+        let name = normalize_archive_entry_path(&entry_name);
+        if name.is_empty() || !entry_matches_filter(&name, files) {
+            continue;
+        }
+
+        let relative_name = strip_archive_prefix(&name, strip_prefix);
+        let out_path = safe_archive_output_path(target, &relative_name)?;
+        let entry_type = entry.header().entry_type();
+
+        if entry_type.is_dir() {
+            fs::create_dir_all(&out_path).map_err(|e| format!("Mkdir error: {}", e))?;
+        } else if entry_type.is_file() {
+            if out_path.symlink_metadata().is_ok() {
+                return Err(format!(
+                    "Extraction target already exists: {}",
+                    out_path.display()
+                ));
+            }
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent).map_err(|e| format!("Mkdir error: {}", e))?;
+            }
+            let mut out =
+                fs::File::create(&out_path).map_err(|e| format!("Create error: {}", e))?;
+            std::io::copy(&mut entry, &mut out).map_err(|e| format!("Copy error: {}", e))?;
+        }
+    }
+
     Ok(())
 }

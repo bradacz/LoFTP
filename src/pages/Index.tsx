@@ -24,6 +24,8 @@ import { useTransfers } from "@/hooks/useTransfers";
 import { useDeleteProgress } from "@/hooks/useDeleteProgress";
 import { useLicense } from "@/hooks/useLicense";
 import { useTheme } from "@/hooks/useTheme";
+import { useShowHiddenFiles } from "@/hooks/useShowHiddenFiles";
+import { filterVisibleFiles } from "@/lib/fileVisibility";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { FunctionKeyBar } from "@/components/ftp/FunctionKeyBar";
 import { CompareBar } from "@/components/ftp/CompareBar";
@@ -39,6 +41,7 @@ import {
   aiRunPrompt,
   archiveCreate,
   archiveExtract,
+  archiveReadText,
   codexExecutePendingBuild,
   codexExecutePendingPlan,
   codexListHostings,
@@ -48,11 +51,13 @@ import {
   fsCombineFiles,
   fsCopy,
   fsCopyDir,
-  fsDelete,
+  fsDeleteMany,
+  DEFAULT_TRANSFER_OPTIONS,
   fsIsDir,
   fsMkdir,
   fsReadText,
   fsRename,
+  fsRemove,
   fsSetModified,
   fsSplitFile,
   fsWriteText,
@@ -62,6 +67,7 @@ import { toast } from "@/components/ui/sonner";
 import { useI18n } from "@/i18n";
 import type { ContextMenuAction, ContextMenuActionPayload, ContextMenuPanel, NativeContextMenuItem } from "@/types/contextMenu";
 import { getContextMenuSettings } from "@/lib/contextMenuSettings";
+import { joinPath, validateEntryName } from "@/lib/utils";
 
 interface CodexPendingPlanPayload {
   planId: string;
@@ -79,6 +85,17 @@ interface CodexPendingPlanPayload {
   };
 }
 
+type FileClipboardEntry =
+  | string
+  | {
+      path?: string;
+      isDirectory?: boolean;
+      archivePath?: string;
+      entryPath?: string;
+      name?: string;
+      stripPrefix?: string;
+    };
+
 interface CodexPendingBuildPayload {
   requestId: string;
   command: string;
@@ -92,10 +109,11 @@ const Index = () => {
   const leftLocal = useLocalFiles();
   const rightLocal = useLocalFiles();
   const connection = useConnection();
-  const { transfers, startUpload, startDownload } = useTransfers();
+  const { transfers, startUpload, startDownload, resetForTransfer } = useTransfers();
   const deleteProgress = useDeleteProgress();
   const license = useLicense();
   const themeCtx = useTheme();
+  const { showHiddenFiles, setShowHiddenFiles } = useShowHiddenFiles();
   const dirCompare = useDirectoryCompare();
   const [sharewareDismissed, setSharewareDismissed] = useState(false);
 
@@ -144,7 +162,25 @@ const Index = () => {
   const leftSelection = useFileSelection();
   const rightSelection = useFileSelection();
   const remoteSelectionForHook = useFileSelection();
+  const clearLeftSelection = leftSelection.clear;
+  const clearRightSelection = rightSelection.clear;
+  const clearRemoteSelection = remoteSelectionForHook.clear;
+  const activatePanel = (panel: "left" | "right") => {
+    if (panel === activePanel) return;
+    if (panel === "left") rightSelection.clear();
+    else leftSelection.clear();
+    if ((panel === "left" ? rightMode : leftMode) === "remote") {
+      remoteSelectionForHook.clear();
+    }
+    setActivePanel(panel);
+  };
   const remote = useRemoteFiles(connection, remoteSelectionForHook.clear);
+  useEffect(() => {
+    clearLeftSelection();
+    clearRightSelection();
+    clearRemoteSelection();
+  }, [showHiddenFiles, clearLeftSelection, clearRightSelection, clearRemoteSelection]);
+
   const hostingWorkspace = useHostingWorkspace({
     hostings,
     saveHosting,
@@ -156,11 +192,12 @@ const Index = () => {
   const isConnected = !!activeHost && connection.getStatus(activeHost.id) === "connected";
 
   // Determine files/path/selection for each panel based on mode
-  const getLeftFiles = () => leftMode === "local" ? leftLocal.files : remote.files;
+  const getVisibleFiles = (files: FileItem[]) => filterVisibleFiles(files, showHiddenFiles);
+  const getLeftFiles = () => getVisibleFiles(leftMode === "local" ? leftLocal.files : remote.files);
   const getLeftPath = () => leftMode === "local" ? leftLocal.path : remote.path;
   const getLeftSelection = () => leftMode === "local" ? leftSelection : remoteSelectionForHook;
 
-  const getRightFiles = () => rightMode === "local" ? rightLocal.files : remote.files;
+  const getRightFiles = () => getVisibleFiles(rightMode === "local" ? rightLocal.files : remote.files);
   const getRightPath = () => rightMode === "local" ? rightLocal.path : remote.path;
   const getRightSelection = () => rightMode === "local" ? rightSelection : remoteSelectionForHook;
   const getLocalPanelHook = (panel: "left" | "right") => panel === "left" ? leftLocal : rightLocal;
@@ -170,6 +207,7 @@ const Index = () => {
     path: getLeftPath(),
     isArchiveView: leftMode === "local" ? leftLocal.isArchiveView : false,
     archivePath: leftMode === "local" ? leftLocal.archivePath : null,
+    archiveInnerPath: leftMode === "local" ? leftLocal.archiveInnerPath : null,
     files: getLeftFiles(),
     selection: getLeftSelection(),
     navigate: (path: string) => {
@@ -194,6 +232,7 @@ const Index = () => {
     path: getRightPath(),
     isArchiveView: rightMode === "local" ? rightLocal.isArchiveView : false,
     archivePath: rightMode === "local" ? rightLocal.archivePath : null,
+    archiveInnerPath: rightMode === "local" ? rightLocal.archiveInnerPath : null,
     files: getRightFiles(),
     selection: getRightSelection(),
     navigate: (path: string) => {
@@ -224,15 +263,12 @@ const Index = () => {
   });
 
   const transferFlow = useTransferOrchestration({
+    connection,
     activeHost,
     activePanel,
     leftPanel: leftPanelData,
     rightPanel: rightPanelData,
-    transfers: { startUpload, startDownload },
-    fileResolver: {
-      resolveActiveItem: fileActions.resolveActiveItem,
-      resolveInactiveItem: fileActions.resolveInactiveItem,
-    },
+    transfers: { startUpload, startDownload, resetForTransfer },
   });
 
   // --- Navigation ---
@@ -258,10 +294,10 @@ const Index = () => {
       } else if (pd.mode === "local" && localPanel.isArchiveView && file.entryPath) {
         localPanel.openArchive(localPanel.archivePath!, file.entryPath, localPanel.archivePath!.split("/").slice(0, -1).join("/") || "/");
       } else {
-        pd.navigate(file.resolvedPath || `${pd.path}/${file.name}`);
+        pd.navigate(file.resolvedPath || joinPath(pd.path, file.name));
       }
     } else if (pd.mode === "local" && isArchive(file.name)) {
-      localPanel.openArchive(`${pd.path}/${file.name}`);
+      localPanel.openArchive(joinPath(pd.path, file.name));
     }
   };
 
@@ -308,7 +344,7 @@ const Index = () => {
     const name = candidateNames[0];
     const file = pd.files.find((item) => item.name === name);
     if (!file || file.isDirectory || !isArchive(name)) return null;
-    return `${pd.path}/${name}`;
+    return joinPath(pd.path, name);
   };
 
   const handleOpenArchive = (panel: "left" | "right" = activePanel, preferredName?: string) => {
@@ -326,10 +362,11 @@ const Index = () => {
   const handleCreateArchiveConfirm = async (archiveName: string) => {
     if (!archiveCreateRequest) return;
 
-    const outputName = /\.zip$/i.test(archiveName) ? archiveName : `${archiveName}.zip`;
     try {
+      const safeArchiveName = validateEntryName(archiveName);
+      const outputName = /\.zip$/i.test(safeArchiveName) ? safeArchiveName : `${safeArchiveName}.zip`;
       await archiveCreate(
-        `${archiveCreateRequest.baseDir}/${outputName}`,
+        joinPath(archiveCreateRequest.baseDir, outputName),
         archiveCreateRequest.sourcePaths,
         archiveCreateRequest.baseDir
       );
@@ -346,9 +383,39 @@ const Index = () => {
     }
   };
 
+  const getArchiveContext = (panel: ContextMenuPanel) => {
+    const pd = panel === "left" ? leftPanelData : rightPanelData;
+    const localPanel = getLocalPanelHook(panel);
+    if (pd.mode !== "local" || !localPanel.isArchiveView || !localPanel.archivePath) return null;
+    return {
+      archivePath: localPanel.archivePath,
+      innerPath: localPanel.archiveInnerPath ?? "",
+    };
+  };
+
+  const getArchiveEntryPaths = (panel: ContextMenuPanel, file: FileItem) => {
+    const pd = getPanelData(panel);
+    return getContextSelection(panel, file)
+      .map((name) => pd.files.find((item) => item.name === name)?.entryPath)
+      .filter((entryPath): entryPath is string => !!entryPath);
+  };
+
   const getFullPath = (panel: ContextMenuPanel, file: FileItem) => {
     const pd = panel === "left" ? leftPanelData : rightPanelData;
-    return `${pd.path}/${file.name}`;
+    const archiveContext = getArchiveContext(panel);
+    if (archiveContext && file.entryPath) {
+      return `${archiveContext.archivePath}!/${file.entryPath}`;
+    }
+    return joinPath(pd.path, file.name);
+  };
+
+  const getRealLocalPanelPath = (panel: ContextMenuPanel) => {
+    const pd = getPanelData(panel);
+    const archiveContext = getArchiveContext(panel);
+    if (archiveContext) {
+      return archiveContext.archivePath.split("/").slice(0, -1).join("/") || "/";
+    }
+    return pd.path;
   };
 
   const runAiExplainFile = async (panel: ContextMenuPanel, file: FileItem) => {
@@ -360,7 +427,10 @@ const Index = () => {
       if (pd.mode !== "local" || file.isDirectory) {
         throw new Error(t("toasts.aiLocalTextOnly"));
       }
-      const content = await fsReadText(fullPath, 80_000);
+      const archiveContext = getArchiveContext(panel);
+      const content = archiveContext && file.entryPath
+        ? await archiveReadText(archiveContext.archivePath, file.entryPath, 80_000)
+        : await fsReadText(fullPath, 80_000);
       const result = await aiRunPrompt("Explain this file for a LoFTP user.", content.content);
       setAssistantResult({ type: "ai", title, body: result.output, loading: false });
     } catch (error) {
@@ -440,7 +510,7 @@ const Index = () => {
   };
 
   const selectContextFile = (panel: ContextMenuPanel, file: FileItem) => {
-    setActivePanel(panel);
+    activatePanel(panel);
     if (file.name === "..") return;
     const pd = getPanelData(panel);
     if (!pd.selection.selected.has(file.name)) {
@@ -450,28 +520,63 @@ const Index = () => {
 
   const getContextSelection = (panel: ContextMenuPanel, file: FileItem) => {
     const pd = getPanelData(panel);
+    const validNames = new Set(pd.files.filter((item) => item.name !== "..").map((item) => item.name));
     const selected = pd.selection.selected.has(file.name)
       ? Array.from(pd.selection.selected)
       : file.name === ".."
         ? []
         : [file.name];
-    return selected.filter((name) => name !== "..");
+    return selected.filter((name) => validNames.has(name));
   };
 
-  const copyLocalEntry = async (from: string, to: string, isDirectory: boolean) => {
-    if (isDirectory) await fsCopyDir(from, to);
-    else await fsCopy(from, to);
+  const copyLocalEntry = async (
+    from: string,
+    to: string,
+    isDirectory: boolean,
+    options = DEFAULT_TRANSFER_OPTIONS,
+  ) => {
+    const normalize = (path: string) => path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "") || "/";
+    if (normalize(from) === normalize(to)) {
+      throw new Error("Source and target are the same file.");
+    }
+    if (isDirectory) await fsCopyDir(from, to, options);
+    else await fsCopy(from, to, options);
   };
 
   const copyLocalSelection = async (panel: ContextMenuPanel, file: FileItem, targetDir: string, move = false) => {
     const pd = getPanelData(panel);
     if (pd.mode !== "local") throw new Error(t("dialogs.localFilesOnly"));
+    const archiveContext = getArchiveContext(panel);
+    if (archiveContext) {
+      if (move) throw new Error(t("dialogs.archiveReadOnly"));
+      const entryPaths = getArchiveEntryPaths(panel, file);
+      if (entryPaths.length === 0) return;
+      await archiveExtract(archiveContext.archivePath, targetDir, entryPaths, archiveContext.innerPath);
+      return;
+    }
     const names = getContextSelection(panel, file);
+    const normalizedTargetDir = targetDir.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "") || "/";
     for (const name of names) {
-      const source = `${pd.path}/${name}`;
       const sourceItem = pd.files.find((item) => item.name === name);
-      await copyLocalEntry(source, `${targetDir}/${name}`, sourceItem?.isDirectory ?? false);
-      if (move) await fsDelete(source);
+      if (!sourceItem) continue;
+      const source = joinPath(pd.path, name);
+      const normalizedSource = source.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "") || "/";
+      if (sourceItem.isDirectory && (normalizedTargetDir === normalizedSource || normalizedTargetDir.startsWith(`${normalizedSource}/`))) {
+        throw new Error("A folder cannot be copied into itself.");
+      }
+    }
+    const transferOptions = move
+      ? { ...DEFAULT_TRANSFER_OPTIONS, overwrite: "rename" }
+      : DEFAULT_TRANSFER_OPTIONS;
+    for (const name of names) {
+      const source = joinPath(pd.path, name);
+      const sourceItem = pd.files.find((item) => item.name === name);
+      await copyLocalEntry(source, joinPath(targetDir, name), sourceItem?.isDirectory ?? false, transferOptions);
+    }
+    if (move) {
+      for (const name of names) {
+        await fsRemove(joinPath(pd.path, name));
+      }
     }
     pd.refresh();
   };
@@ -479,10 +584,20 @@ const Index = () => {
   const saveContextClipboard = (panel: ContextMenuPanel, file: FileItem) => {
     const pd = getPanelData(panel);
     if (pd.mode !== "local") throw new Error(t("dialogs.localFilesOnly"));
-    const entries = getContextSelection(panel, file).map((name) => {
+    const archiveContext = getArchiveContext(panel);
+    const entries: FileClipboardEntry[] = getContextSelection(panel, file).map((name) => {
       const sourceFile = pd.files.find((item) => item.name === name);
+      if (archiveContext && sourceFile?.entryPath) {
+        return {
+          archivePath: archiveContext.archivePath,
+          entryPath: sourceFile.entryPath,
+          name,
+          isDirectory: sourceFile.isDirectory,
+          stripPrefix: archiveContext.innerPath,
+        };
+      }
       return {
-        path: `${pd.path}/${name}`,
+        path: joinPath(pd.path, name),
         isDirectory: sourceFile?.isDirectory ?? false,
       };
     });
@@ -493,14 +608,20 @@ const Index = () => {
   const pasteContextClipboard = async (panel: ContextMenuPanel) => {
     const pd = getPanelData(panel);
     if (pd.mode !== "local") throw new Error(t("dialogs.localPanelOnly"));
+    if (getArchiveContext(panel)) throw new Error(t("dialogs.archiveReadOnly"));
     const raw = localStorage.getItem("loftp.fileClipboard.v1");
-    const parsed = raw ? JSON.parse(raw) as Array<string | { path: string; isDirectory?: boolean }> : [];
+    const parsed = raw ? JSON.parse(raw) as FileClipboardEntry[] : [];
     for (const entry of parsed) {
+      if (typeof entry !== "string" && entry.archivePath && entry.entryPath) {
+        await archiveExtract(entry.archivePath, pd.path, [entry.entryPath], entry.stripPrefix ?? "");
+        continue;
+      }
       const source = typeof entry === "string" ? entry : entry.path;
+      if (!source) continue;
       const name = source.split("/").filter(Boolean).pop();
       if (!name) continue;
       const isDirectory = typeof entry === "string" ? await fsIsDir(source) : Boolean(entry.isDirectory);
-      await copyLocalEntry(source, `${pd.path}/${name}`, isDirectory);
+      await copyLocalEntry(source, joinPath(pd.path, name), isDirectory);
     }
     pd.refresh();
   };
@@ -518,14 +639,16 @@ const Index = () => {
 
   const renameInPanel = async (panel: ContextMenuPanel, file: FileItem, newName: string) => {
     const pd = getPanelData(panel);
+    if (getArchiveContext(panel)) throw new Error(t("dialogs.archiveReadOnly"));
     const oldName = file.name;
-    if (!newName || newName === oldName) return;
+    const safeName = validateEntryName(newName);
+    if (safeName === oldName) return;
     if (pd.mode === "remote") {
       if (!activeHost || connection.getStatus(activeHost.id) !== "connected") throw new Error(t("dialogs.remoteNotConnected"));
       if (activeHost.protocol === "bunnyStorage") throw new Error("Bunny Storage does not support atomic rename.");
-      await connection.renameRemote(activeHost.id, `${pd.path}/${oldName}`, `${pd.path}/${newName}`, activeHost.protocol);
+      await connection.renameRemote(activeHost.id, joinPath(pd.path, oldName), joinPath(pd.path, safeName), activeHost.protocol);
     } else {
-      await fsRename(`${pd.path}/${oldName}`, `${pd.path}/${newName}`);
+      await fsRename(joinPath(pd.path, oldName), joinPath(pd.path, safeName));
     }
     pd.selection.clear();
     pd.refresh();
@@ -533,60 +656,100 @@ const Index = () => {
 
   const createFolderInPanel = async (panel: ContextMenuPanel, name: string) => {
     const pd = getPanelData(panel);
+    if (getArchiveContext(panel)) throw new Error(t("dialogs.archiveReadOnly"));
+    const safeName = validateEntryName(name);
     if (pd.mode === "remote") {
       if (!activeHost || connection.getStatus(activeHost.id) !== "connected") throw new Error(t("dialogs.remoteNotConnected"));
-      await connection.mkdirRemote(activeHost.id, `${pd.path}/${name}`, activeHost.protocol);
+      await connection.mkdirRemote(activeHost.id, joinPath(pd.path, safeName), activeHost.protocol);
     } else {
-      await fsMkdir(`${pd.path}/${name}`);
+      await fsMkdir(joinPath(pd.path, safeName));
     }
     pd.refresh();
   };
 
   const deleteSelectionInPanel = async (panel: ContextMenuPanel, selectedNames: string[]) => {
     const pd = getPanelData(panel);
-    const names = selectedNames.filter((name) => name !== "..");
-    if (names.length === 0) return;
+    if (getArchiveContext(panel)) throw new Error(t("dialogs.archiveReadOnly"));
+    const targets = selectedNames
+      .filter((name) => name !== "..")
+      .map((name) => {
+        const item = pd.files.find((entry) => entry.name === name);
+        return item
+          ? { name, path: joinPath(pd.path, name), isDirectory: item.isDirectory }
+          : null;
+      })
+      .filter((target): target is { name: string; path: string; isDirectory: boolean } => target !== null);
+    if (targets.length === 0) return;
 
     const deleteId = crypto.randomUUID();
     deleteProgress.begin({
       id: deleteId,
       mode: pd.mode,
       rootPath: pd.path,
-      totalItems: names.length,
+      totalItems: targets.length,
     });
 
     let completedItems = 0;
-    try {
-      for (const name of names) {
-        const targetPath = `${pd.path}/${name}`;
-        deleteProgress.step({
-          id: deleteId,
-          currentPath: targetPath,
-          currentName: name,
-          completedItems,
-        });
+    if (pd.mode === "local") {
+      deleteProgress.step({
+        id: deleteId,
+        currentPath: pd.path,
+        currentName: pd.path,
+        completedItems: 0,
+      });
 
-        if (pd.mode === "remote") {
-          if (!activeHost || connection.getStatus(activeHost.id) !== "connected") throw new Error(t("dialogs.remoteNotConnected"));
-          const item = pd.files.find((entry) => entry.name === name);
-          await connection.deleteRemote(activeHost.id, targetPath, item?.isDirectory ?? false, activeHost.protocol, deleteId);
-        } else {
-          await fsDelete(targetPath);
-        }
+      try {
+        await fsDeleteMany(targets.map((target) => target.path), deleteId);
+        completedItems = targets.length;
+        deleteProgress.finish({ id: deleteId, completedItems });
+        pd.selection.clear();
+      } catch (error) {
+        deleteProgress.fail({ id: deleteId, error: String(error) });
+        pd.refresh();
+        throw error;
+      }
+      pd.refresh();
+      return;
+    }
 
+    if (!activeHost || connection.getStatus(activeHost.id) !== "connected") {
+      const error = new Error(t("dialogs.remoteNotConnected"));
+      deleteProgress.fail({ id: deleteId, error: String(error) });
+      pd.refresh();
+      throw error;
+    }
+
+    const errors: string[] = [];
+    for (const target of targets) {
+      deleteProgress.step({
+        id: deleteId,
+        currentPath: target.path,
+        currentName: target.name,
+        completedItems,
+      });
+
+      try {
+        await connection.deleteRemote(activeHost.id, target.path, target.isDirectory, activeHost.protocol, deleteId);
         completedItems += 1;
         deleteProgress.step({
           id: deleteId,
-          currentPath: targetPath,
-          currentName: name,
+          currentPath: target.path,
+          currentName: target.name,
           completedItems,
         });
+      } catch (error) {
+        errors.push(String(error));
       }
-      deleteProgress.finish({ id: deleteId, completedItems });
-    } catch (error) {
+    }
+
+    if (errors.length > 0) {
+      const error = new Error(errors[0]);
       deleteProgress.fail({ id: deleteId, error: String(error) });
+      pd.refresh();
       throw error;
     }
+
+    deleteProgress.finish({ id: deleteId, completedItems });
     pd.selection.clear();
     pd.refresh();
   };
@@ -641,6 +804,7 @@ const Index = () => {
         return;
       }
       if (action === "batchRename") {
+        validateEntryName(value);
         const names = getContextSelection(panel, file).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
         const planned = names.map((name, index) => {
           const extension = name.includes(".") ? `.${name.split(".").pop()}` : "";
@@ -652,13 +816,13 @@ const Index = () => {
         }
         for (const [index, name] of names.entries()) {
           const extension = name.includes(".") ? `.${name.split(".").pop()}` : "";
-          await fsRename(`${pd.path}/${name}`, `${pd.path}/${value}${index + 1}${extension}`);
+          await fsRename(joinPath(pd.path, name), joinPath(pd.path, `${value}${index + 1}${extension}`));
         }
         pd.refresh();
         return;
       }
       if (action === "newFile") {
-        await fsWriteText(`${pd.path}/${value}`, "");
+        await fsWriteText(joinPath(pd.path, validateEntryName(value)), "");
         pd.refresh();
         return;
       }
@@ -671,8 +835,8 @@ const Index = () => {
       if (action === "combineFiles") {
         const parts = getContextSelection(panel, file)
           .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-          .map((name) => `${pd.path}/${name}`);
-        await fsCombineFiles(parts, `${pd.path}/${value}`);
+          .map((name) => joinPath(pd.path, name));
+        await fsCombineFiles(parts, joinPath(pd.path, validateEntryName(value)));
         pd.refresh();
         return;
       }
@@ -697,6 +861,7 @@ const Index = () => {
 
   const performContextMenuAction = (action: ContextMenuAction, panel: ContextMenuPanel, file: FileItem) => {
     const pd = panel === "left" ? leftPanelData : rightPanelData;
+    const archiveContext = getArchiveContext(panel);
 
     if (action === "copyPath") {
       navigator.clipboard.writeText(getFullPath(panel, file));
@@ -718,16 +883,16 @@ const Index = () => {
       pasteContextClipboard(panel).catch((error) => toast.error(String(error)));
       return;
     }
-    if (action === "openInFinder" && pd.mode === "local") {
+    if (action === "openInFinder" && pd.mode === "local" && !archiveContext) {
       openExternal(getFullPath(panel, file)).catch(() => {});
       return;
     }
-    if (action === "openInVSCode" && pd.mode === "local") {
+    if (action === "openInVSCode" && pd.mode === "local" && !archiveContext) {
       const encodedPath = encodeURI(getFullPath(panel, file));
       openExternal(`vscode://file${encodedPath}`).catch(() => {});
       return;
     }
-    if ((action === "openNatively" || action === "openWith") && pd.mode === "local") {
+    if ((action === "openNatively" || action === "openWith") && pd.mode === "local" && !archiveContext) {
       const targetPath = getFullPath(panel, file);
       if (action === "openWith") {
         openExternal(`file://${targetPath}`).catch(() => openExternal(targetPath).catch(() => {}));
@@ -749,15 +914,15 @@ const Index = () => {
       return;
     }
     if (action === "extractTo") {
-      requestContextInput(action, panel, file, t("contextMenu.extractTo"), t("dialogs.targetFolder"), pd.path);
+      requestContextInput(action, panel, file, t("contextMenu.extractTo"), t("dialogs.targetFolder"), getRealLocalPanelPath(panel));
       return;
     }
     if (action === "copyTo") {
-      requestContextInput(action, panel, file, t("contextMenu.copyTo"), t("dialogs.targetFolder"), pd.path);
+      requestContextInput(action, panel, file, t("contextMenu.copyTo"), t("dialogs.targetFolder"), getRealLocalPanelPath(panel));
       return;
     }
     if (action === "moveTo") {
-      requestContextInput(action, panel, file, t("contextMenu.moveTo"), t("dialogs.targetFolder"), pd.path);
+      requestContextInput(action, panel, file, t("contextMenu.moveTo"), t("dialogs.targetFolder"), getRealLocalPanelPath(panel));
       return;
     }
     if (action === "chmod") {
@@ -823,7 +988,7 @@ const Index = () => {
       return;
     }
     if (action === "search") {
-      setActivePanel(panel);
+      activatePanel(panel);
       setSearchOpen(true);
       return;
     }
@@ -971,7 +1136,9 @@ const Index = () => {
 
   const openSystemContextMenu = async (panel: ContextMenuPanel, file: FileItem, event: React.MouseEvent) => {
     const panelData = getPanelData(panel);
-    setActivePanel(panel);
+    const panelArchiveView = !!getArchiveContext(panel);
+    const panelWritableLocal = panelData.mode === "local" && !panelArchiveView;
+    activatePanel(panel);
     if (file.name !== ".." && !panelData.selection.selected.has(file.name)) {
       panelData.selection.setSelected(new Set([file.name]));
     }
@@ -997,11 +1164,11 @@ const Index = () => {
     if (enabled("copyFiles") && file.name !== "..") {
       items.push({ action: "copyFiles", label: t("contextMenu.copyFiles"), shortcut: shortcut("F5") });
     }
-    if (enabled("pasteFiles") && panelData.mode === "local") {
+    if (enabled("pasteFiles") && panelWritableLocal) {
       items.push({ action: "pasteFiles", label: t("contextMenu.pasteFiles") });
     }
 
-    if (panelData.mode === "local") {
+    if (panelWritableLocal) {
       if (enabled("openInFinder")) {
         items.push({ action: "openInFinder", label: t("contextMenu.openInFinder"), shortcut: shortcut("Cmd+O") });
       }
@@ -1032,7 +1199,7 @@ const Index = () => {
       items.push({ action: "openArchive", label: t("contextMenu.openArchive") });
     }
 
-    if (enabled("createArchive") && panelData.mode === "local" && file.name !== "..") {
+    if (enabled("createArchive") && panelWritableLocal && file.name !== "..") {
       items.push({ action: "createArchive", label: t("contextMenu.createArchive") });
     }
     if (enabled("extractHere") && panelData.mode === "local" && resolveArchivePath(panel, file.name)) {
@@ -1045,13 +1212,13 @@ const Index = () => {
     if (enabled("copyTo") && panelData.mode === "local" && file.name !== "..") {
       items.push({ action: "copyTo", label: t("contextMenu.copyTo") });
     }
-    if (enabled("moveTo") && panelData.mode === "local" && file.name !== "..") {
+    if (enabled("moveTo") && panelWritableLocal && file.name !== "..") {
       items.push({ action: "moveTo", label: t("contextMenu.moveTo") });
     }
-    if (enabled("newFile") && panelData.mode === "local") {
+    if (enabled("newFile") && panelWritableLocal) {
       items.push({ action: "newFile", label: t("contextMenu.newFile") });
     }
-    if (enabled("newFolder")) {
+    if (enabled("newFolder") && !panelArchiveView) {
       items.push({ action: "newFolder", label: t("contextMenu.newFolder"), shortcut: shortcut("F7") });
     }
     if (enabled("selectAll")) {
@@ -1082,29 +1249,29 @@ const Index = () => {
     if (enabled("properties")) {
       items.push({ action: "properties", label: t("contextMenu.properties") });
     }
-    if (enabled("chmod") && panelData.mode === "local" && file.name !== "..") {
+    if (enabled("chmod") && panelWritableLocal && file.name !== "..") {
       items.push({ action: "chmod", label: t("contextMenu.chmod") });
     }
-    if (enabled("changeDate") && panelData.mode === "local" && file.name !== "..") {
+    if (enabled("changeDate") && panelWritableLocal && file.name !== "..") {
       items.push({ action: "changeDate", label: t("contextMenu.changeDate") });
     }
-    if (enabled("calculateChecksum") && panelData.mode === "local" && !file.isDirectory) {
+    if (enabled("calculateChecksum") && panelWritableLocal && !file.isDirectory) {
       items.push({ action: "calculateChecksum", label: t("contextMenu.calculateChecksum") });
     }
-    if (enabled("batchRename") && panelData.mode === "local" && file.name !== "..") {
+    if (enabled("batchRename") && panelWritableLocal && file.name !== "..") {
       items.push({ action: "batchRename", label: t("contextMenu.batchRename") });
     }
-    if (enabled("splitFile") && panelData.mode === "local" && !file.isDirectory) {
+    if (enabled("splitFile") && panelWritableLocal && !file.isDirectory) {
       items.push({ action: "splitFile", label: t("contextMenu.splitFile") });
     }
-    if (enabled("combineFiles") && panelData.mode === "local" && getContextSelection(panel, file).length > 1) {
+    if (enabled("combineFiles") && panelWritableLocal && getContextSelection(panel, file).length > 1) {
       items.push({ action: "combineFiles", label: t("contextMenu.combineFiles") });
     }
-    const panelRenameSupported = !(panelData.mode === "remote" && activeHost?.protocol === "bunnyStorage");
-    if (enabled("rename") && panelRenameSupported) {
+    const panelRenameSupported = !panelArchiveView && !(panelData.mode === "remote" && activeHost?.protocol === "bunnyStorage");
+    if (enabled("rename") && panelRenameSupported && file.name !== "..") {
       items.push({ action: "rename", label: t("contextMenu.rename"), shortcut: shortcut("F6") });
     }
-    if (enabled("delete")) {
+    if (enabled("delete") && !panelArchiveView && file.name !== "..") {
       items.push({ action: "delete", label: t("contextMenu.delete"), shortcut: shortcut("F8") });
     }
     if (items.length === 0) {
@@ -1129,7 +1296,8 @@ const Index = () => {
 
   const canOpenArchive = !!resolveArchivePath(activePanel);
   const canCreateArchive = !!getArchiveSelection(activePanel);
-  const activeSelectedNames = Array.from(activeSel.selected).filter((name) => name !== "..");
+  const activeFileNameSet = new Set(activeFiles.filter((file) => file.name !== "..").map((file) => file.name));
+  const activeSelectedNames = Array.from(activeSel.selected).filter((name) => activeFileNameSet.has(name));
   const activeMenuFile = activeFiles.find((file) => activeSelectedNames.includes(file.name)) ?? null;
   const activeMenuFallbackFile: FileItem = activeMenuFile ?? {
     name: "",
@@ -1140,8 +1308,10 @@ const Index = () => {
   const activeMenuHasFile = !!activeMenuFile;
   const activeMenuHasSelection = activeSelectedNames.length > 0;
   const activeMenuIsLocal = activePanelData.mode === "local";
+  const activeMenuIsArchiveView = activeMenuIsLocal && getLocalPanelHook(activePanel).isArchiveView;
+  const activeMenuIsWritableLocal = activeMenuIsLocal && !activeMenuIsArchiveView;
   const activeMenuIsFile = !!activeMenuFile && !activeMenuFile.isDirectory;
-  const activeRenameSupported = !(activePanelData.mode === "remote" && activeHost?.protocol === "bunnyStorage");
+  const activeRenameSupported = !activeMenuIsArchiveView && !(activePanelData.mode === "remote" && activeHost?.protocol === "bunnyStorage");
 
   const runMenuContextAction = (action: ContextMenuAction, requiresFile = true) => {
     if (requiresFile && !activeMenuFile) return;
@@ -1165,11 +1335,11 @@ const Index = () => {
         { id: "upload", label: t("toolbar.upload"), onSelect: transferFlow.copy, disabled: !fileActions.hasSelection },
         { id: "download", label: t("toolbar.download"), onSelect: transferFlow.copy, disabled: !fileActions.hasSelection },
         { id: "copy", label: t("functionKeys.copy"), onSelect: transferFlow.copy, disabled: !fileActions.hasSelection, shortcut: "F5" },
-        { id: "move", label: t("functionKeys.move"), onSelect: fileActions.rename, disabled: !fileActions.hasSelection || !activeRenameSupported, shortcut: "F6" },
+        { id: "move", label: t("functionKeys.move"), onSelect: transferFlow.move, disabled: !fileActions.hasSelection || activeMenuIsArchiveView, shortcut: "F6" },
         { id: "copyTo", label: t("contextMenu.copyTo"), onSelect: () => runMenuContextAction("copyTo"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
-        { id: "moveTo", label: t("contextMenu.moveTo"), onSelect: () => runMenuContextAction("moveTo"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
+        { id: "moveTo", label: t("contextMenu.moveTo"), onSelect: () => runMenuContextAction("moveTo"), disabled: !activeMenuIsWritableLocal || !activeMenuHasFile },
         { id: "copyFiles", label: t("contextMenu.copyFiles"), onSelect: () => runMenuContextAction("copyFiles"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
-        { id: "pasteFiles", label: t("contextMenu.pasteFiles"), onSelect: () => runMenuContextAction("pasteFiles", false), disabled: !activeMenuIsLocal },
+        { id: "pasteFiles", label: t("contextMenu.pasteFiles"), onSelect: () => runMenuContextAction("pasteFiles", false), disabled: !activeMenuIsWritableLocal },
       ],
     },
     {
@@ -1177,18 +1347,18 @@ const Index = () => {
       label: t("toolbar.menuFile"),
       items: [
         { id: "view", label: t("functionKeys.view"), onSelect: () => setQuickViewOpen((v) => !v), disabled: !activeMenuHasFile, shortcut: "F3" },
-        { id: "edit", label: t("functionKeys.edit"), onSelect: () => setEditorOpen(true), disabled: !activeMenuIsLocal || !activeMenuIsFile, shortcut: "F4" },
-        { id: "openInFinder", label: t("contextMenu.openInFinder"), onSelect: () => runMenuContextAction("openInFinder"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
-        { id: "openInVsCode", label: t("contextMenu.openInVsCode"), onSelect: () => runMenuContextAction("openInVSCode"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
-        { id: "openNatively", label: t("contextMenu.openNatively"), onSelect: () => runMenuContextAction("openNatively"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
-        { id: "openWith", label: t("contextMenu.openWith"), onSelect: () => runMenuContextAction("openWith"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
+        { id: "edit", label: t("functionKeys.edit"), onSelect: () => setEditorOpen(true), disabled: !activeMenuIsWritableLocal || !activeMenuIsFile, shortcut: "F4" },
+        { id: "openInFinder", label: t("contextMenu.openInFinder"), onSelect: () => runMenuContextAction("openInFinder"), disabled: !activeMenuIsWritableLocal || !activeMenuHasFile },
+        { id: "openInVsCode", label: t("contextMenu.openInVsCode"), onSelect: () => runMenuContextAction("openInVSCode"), disabled: !activeMenuIsWritableLocal || !activeMenuHasFile },
+        { id: "openNatively", label: t("contextMenu.openNatively"), onSelect: () => runMenuContextAction("openNatively"), disabled: !activeMenuIsWritableLocal || !activeMenuHasFile },
+        { id: "openWith", label: t("contextMenu.openWith"), onSelect: () => runMenuContextAction("openWith"), disabled: !activeMenuIsWritableLocal || !activeMenuHasFile },
         { id: "copyPath", label: t("contextMenu.copyPath"), onSelect: () => runMenuContextAction("copyPath"), disabled: !activeMenuHasFile, shortcut: "Cmd+Shift+C" },
         { id: "copyName", label: t("contextMenu.copyName"), onSelect: () => runMenuContextAction("copyName"), disabled: !activeMenuHasFile },
         { id: "copyBaseName", label: t("contextMenu.copyBaseName"), onSelect: () => runMenuContextAction("copyBaseName"), disabled: !activeMenuHasFile },
-        { id: "newFile", label: t("contextMenu.newFile"), onSelect: () => runMenuContextAction("newFile", false), disabled: !activeMenuIsLocal },
-        { id: "newFolder", label: t("contextMenu.newFolder"), onSelect: fileActions.createFolder, shortcut: "F7" },
+        { id: "newFile", label: t("contextMenu.newFile"), onSelect: () => runMenuContextAction("newFile", false), disabled: !activeMenuIsWritableLocal },
+        { id: "newFolder", label: t("contextMenu.newFolder"), onSelect: fileActions.createFolder, disabled: activeMenuIsArchiveView, shortcut: "F7" },
         { id: "rename", label: t("contextMenu.rename"), onSelect: fileActions.rename, disabled: !activeMenuHasSelection || !activeRenameSupported, shortcut: "F6" },
-        { id: "delete", label: t("contextMenu.delete"), onSelect: fileActions.remove, disabled: !activeMenuHasSelection, shortcut: "F8", danger: true },
+        { id: "delete", label: t("contextMenu.delete"), onSelect: fileActions.remove, disabled: !activeMenuHasSelection || activeMenuIsArchiveView, shortcut: "F8", danger: true },
       ],
     },
     {
@@ -1227,12 +1397,12 @@ const Index = () => {
           },
         },
         { id: "properties", label: t("contextMenu.properties"), onSelect: () => runMenuContextAction("properties"), disabled: !activeMenuHasFile },
-        { id: "chmod", label: t("contextMenu.chmod"), onSelect: () => runMenuContextAction("chmod"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
-        { id: "changeDate", label: t("contextMenu.changeDate"), onSelect: () => runMenuContextAction("changeDate"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
-        { id: "calculateChecksum", label: t("contextMenu.calculateChecksum"), onSelect: () => runMenuContextAction("calculateChecksum"), disabled: !activeMenuIsLocal || !activeMenuIsFile },
-        { id: "batchRename", label: t("contextMenu.batchRename"), onSelect: () => runMenuContextAction("batchRename"), disabled: !activeMenuIsLocal || !activeMenuHasFile },
-        { id: "splitFile", label: t("contextMenu.splitFile"), onSelect: () => runMenuContextAction("splitFile"), disabled: !activeMenuIsLocal || !activeMenuIsFile },
-        { id: "combineFiles", label: t("contextMenu.combineFiles"), onSelect: () => runMenuContextAction("combineFiles"), disabled: !activeMenuIsLocal || activeSelectedNames.length <= 1 },
+        { id: "chmod", label: t("contextMenu.chmod"), onSelect: () => runMenuContextAction("chmod"), disabled: !activeMenuIsWritableLocal || !activeMenuHasFile },
+        { id: "changeDate", label: t("contextMenu.changeDate"), onSelect: () => runMenuContextAction("changeDate"), disabled: !activeMenuIsWritableLocal || !activeMenuHasFile },
+        { id: "calculateChecksum", label: t("contextMenu.calculateChecksum"), onSelect: () => runMenuContextAction("calculateChecksum"), disabled: !activeMenuIsWritableLocal || !activeMenuIsFile },
+        { id: "batchRename", label: t("contextMenu.batchRename"), onSelect: () => runMenuContextAction("batchRename"), disabled: !activeMenuIsWritableLocal || !activeMenuHasFile },
+        { id: "splitFile", label: t("contextMenu.splitFile"), onSelect: () => runMenuContextAction("splitFile"), disabled: !activeMenuIsWritableLocal || !activeMenuIsFile },
+        { id: "combineFiles", label: t("contextMenu.combineFiles"), onSelect: () => runMenuContextAction("combineFiles"), disabled: !activeMenuIsWritableLocal || activeSelectedNames.length <= 1 },
         { id: "aiExplainFile", label: t("contextMenu.aiExplainFile"), onSelect: () => runMenuContextAction("aiExplainFile"), disabled: !activeMenuIsLocal || !activeMenuIsFile },
         { id: "codexExplainFile", label: t("contextMenu.codexExplainFile"), onSelect: () => runMenuContextAction("codexExplainFile"), disabled: !activeMenuHasFile },
       ],
@@ -1286,12 +1456,34 @@ const Index = () => {
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
+    disabled: Boolean(
+      fileActions.pendingAction ||
+        contextInput ||
+        contextConfirm ||
+        archiveCreateRequest ||
+        settingsOpen ||
+        aboutOpen ||
+        searchOpen ||
+        propsFile ||
+        assistantResult ||
+        editorOpen ||
+        hostingWorkspace.dialogOpen ||
+        transferFlow.transferDialogOpen ||
+        (!license.isActivated && !sharewareDismissed)
+    ),
+    hasSelection: activeMenuHasSelection,
     onView: () => setQuickViewOpen((v) => !v),
-    onEdit: () => setEditorOpen(true),
+    onEdit: () => {
+      if (activeMenuIsWritableLocal && activeMenuIsFile) setEditorOpen(true);
+    },
     onCopy: () => transferFlow.copy(),
-    onMove: () => fileActions.rename(),
-    onNewFolder: () => fileActions.createFolder(),
-    onDelete: () => fileActions.remove(),
+    onMove: () => transferFlow.move(),
+    onNewFolder: () => {
+      if (!activeMenuIsArchiveView) fileActions.createFolder();
+    },
+    onDelete: () => {
+      if (!activeMenuIsArchiveView) fileActions.remove();
+    },
     onSearch: () => setSearchOpen(true),
     onRefresh: () => fileActions.refresh(),
     onSelectAll: () => {
@@ -1303,7 +1495,7 @@ const Index = () => {
       const inverted = new Set(all.filter((n) => !activeSel.selected.has(n)));
       activeSel.setSelected(inverted);
     },
-    onTogglePanel: () => setActivePanel((p) => (p === "left" ? "right" : "left")),
+    onTogglePanel: () => activatePanel(activePanel === "left" ? "right" : "left"),
     onNavigateUp: handleNavigateUp,
   });
 
@@ -1352,6 +1544,8 @@ const Index = () => {
         }}
         hasSelection={fileActions.hasSelection}
         canRename={fileActions.hasSelection && activeRenameSupported}
+        canNewFolder={!activeMenuIsArchiveView}
+        canDelete={fileActions.hasSelection && !activeMenuIsArchiveView}
         canOpenArchive={canOpenArchive}
         canCreateArchive={canCreateArchive}
         isComparing={dirCompare.isComparing}
@@ -1382,7 +1576,7 @@ const Index = () => {
             });
             if (toSync.length > 0) {
               leftPanelData.selection.setSelected(new Set(toSync.map((f) => f.name)));
-              setActivePanel("left");
+              activatePanel("left");
               transferFlow.copy();
             }
           }}
@@ -1393,7 +1587,7 @@ const Index = () => {
             });
             if (toSync.length > 0) {
               rightPanelData.selection.setSelected(new Set(toSync.map((f) => f.name)));
-              setActivePanel("right");
+              activatePanel("right");
               transferFlow.copy();
             }
           }}
@@ -1403,7 +1597,7 @@ const Index = () => {
 
       {/* Dual panel */}
       <div className="flex-1 grid grid-cols-2 gap-0 min-h-0">
-        <div className="border-r border-divider p-1.5 min-h-0" onClick={() => setActivePanel("left")}>
+        <div className="border-r border-divider p-1.5 min-h-0" onClick={() => activatePanel("left")}>
           <FilePanel
             title={leftMode === "local" ? t("common.local") : t("common.server")}
             icon={leftMode === "local" ? "local" : "remote"}
@@ -1416,17 +1610,19 @@ const Index = () => {
             }}
             selectedFiles={getLeftSelection().selected}
             onSelect={getLeftSelection().toggle}
+            onClearSelection={getLeftSelection().clear}
             onRangeSelect={getLeftSelection().rangeSelect}
             onUpdateLastClicked={getLeftSelection().updateLastClicked}
             onDoubleClick={(file) => handleDoubleClick("left", file)}
             onContextMenu={(event, file) => openSystemContextMenu("left", file, event)}
-            onDrop={(fileNames) => transferFlow.dropOnPanel("left", fileNames)}
+            onDrop={(fileNames, operation) => transferFlow.dropOnPanel("left", fileNames, operation)}
+            onActivate={() => activatePanel("left")}
             panelId="left"
             isFocused={activePanel === "left"}
             compareStatus={dirCompare.isComparing ? dirCompare.result?.statusMap : undefined}
           />
         </div>
-        <div className="p-1.5 min-h-0" onClick={() => !quickViewOpen && setActivePanel("right")}>
+        <div className="p-1.5 min-h-0" onClick={() => !quickViewOpen && activatePanel("right")}>
           {quickViewOpen ? (
             <QuickViewPanel
               filePath={(() => {
@@ -1436,7 +1632,7 @@ const Index = () => {
                 const file = activeFiles.find((f) => f.name === name);
                 if (!file || file.isDirectory) return null;
                 if (activePanelData.mode === "local" && !getLocalPanelHook(activePanel).isArchiveView) {
-                  return `${activePanelData.path}/${name}`;
+                  return joinPath(activePanelData.path, name);
                 }
                 return null;
               })()}
@@ -1472,11 +1668,13 @@ const Index = () => {
               }}
               selectedFiles={getRightSelection().selected}
               onSelect={getRightSelection().toggle}
+              onClearSelection={getRightSelection().clear}
               onRangeSelect={getRightSelection().rangeSelect}
               onUpdateLastClicked={getRightSelection().updateLastClicked}
               onDoubleClick={(file) => handleDoubleClick("right", file)}
               onContextMenu={(event, file) => openSystemContextMenu("right", file, event)}
-              onDrop={(fileNames) => transferFlow.dropOnPanel("right", fileNames)}
+              onDrop={(fileNames, operation) => transferFlow.dropOnPanel("right", fileNames, operation)}
+              onActivate={() => activatePanel("right")}
               panelId="right"
               isFocused={activePanel === "right"}
               compareStatus={dirCompare.isComparing ? dirCompare.result?.statusMap : undefined}
@@ -1488,13 +1686,19 @@ const Index = () => {
       {/* Function key bar */}
       <FunctionKeyBar
         onView={() => setQuickViewOpen((v) => !v)}
-        onEdit={() => setEditorOpen(true)}
+        onEdit={() => {
+          if (activeMenuIsWritableLocal && activeMenuIsFile) setEditorOpen(true);
+        }}
         onCopy={() => transferFlow.copy()}
         onMove={() => {
-          if (activeRenameSupported) fileActions.rename();
+          transferFlow.move();
         }}
-        onNewFolder={() => fileActions.createFolder()}
-        onDelete={() => fileActions.remove()}
+        onNewFolder={() => {
+          if (!activeMenuIsArchiveView) fileActions.createFolder();
+        }}
+        onDelete={() => {
+          if (!activeMenuIsArchiveView) fileActions.remove();
+        }}
         onSearch={() => setSearchOpen(true)}
       />
 
@@ -1516,6 +1720,7 @@ const Index = () => {
           fromPath={transferFlow.pendingTransfer.from}
           toPath={transferFlow.pendingTransfer.to}
           direction={transferFlow.pendingTransfer.direction}
+          operation={transferFlow.pendingTransfer.operation}
           transfers={transfers}
           transferring={transferFlow.isTransferring}
         />
@@ -1526,12 +1731,13 @@ const Index = () => {
         open={editorOpen}
         filePath={(() => {
           if (activePanelData.mode !== "local") return null;
+          if (getLocalPanelHook(activePanel).isArchiveView) return null;
           const sel = activeSel.selected;
           if (sel.size === 0) return null;
           const name = Array.from(sel)[0];
           const file = activeFiles.find((f) => f.name === name);
           if (!file || file.isDirectory) return null;
-          return `${activePanelData.path}/${name}`;
+          return joinPath(activePanelData.path, name);
         })()}
         onClose={() => setEditorOpen(false)}
         onSaved={() => activePanelData.refresh()}
@@ -1629,7 +1835,14 @@ const Index = () => {
         }}
       />
 
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} theme={themeCtx.theme} onThemeChange={themeCtx.setTheme} />
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        theme={themeCtx.theme}
+        onThemeChange={themeCtx.setTheme}
+        showHiddenFiles={showHiddenFiles}
+        onShowHiddenFilesChange={setShowHiddenFiles}
+      />
       <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
       <SharewareDialog
         open={!license.isActivated && !sharewareDismissed}

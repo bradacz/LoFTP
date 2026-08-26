@@ -41,6 +41,8 @@ interface SettingsDialogProps {
   onClose: () => void;
   theme: "light" | "dark";
   onThemeChange: (theme: "light" | "dark") => void;
+  showHiddenFiles: boolean;
+  onShowHiddenFilesChange: (show: boolean) => void;
 }
 
 type SettingsSection = "general" | "appearance" | "context" | "ai" | "codex" | "integrations" | "license";
@@ -83,7 +85,7 @@ const CONTEXT_MENU_GROUPS: Array<{ titleKey: string; actions: ContextMenuAction[
   { titleKey: "settings.contextMenuAdvanced", actions: ["batchRename", "splitFile", "combineFiles", "compareFolders", "aiExplainFile", "codexExplainFile"] },
 ];
 
-export function SettingsDialog({ open, onClose, theme, onThemeChange }: SettingsDialogProps) {
+export function SettingsDialog({ open, onClose, theme, onThemeChange, showHiddenFiles, onShowHiddenFilesChange }: SettingsDialogProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
   const [activationCode, setActivationCode] = useState("");
   const [activating, setActivating] = useState(false);
@@ -404,6 +406,14 @@ export function SettingsDialog({ open, onClose, theme, onThemeChange }: Settings
                   <p className="mt-4 rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
                     {t("settings.appearanceLightPanelsHint")}
                   </p>
+                  <div className="mt-4 rounded-lg border border-border bg-background">
+                    <ToggleRow
+                      label={t("settings.showHiddenFiles")}
+                      note={t("settings.showHiddenFilesDesc")}
+                      checked={showHiddenFiles}
+                      onChange={onShowHiddenFilesChange}
+                    />
+                  </div>
                 </SettingsCard>
               )}
 

@@ -104,7 +104,7 @@ export function useConnection() {
   }, []);
 
   const deleteRemote = useCallback(async (hostingId: string, path: string, isDir: boolean, protocol: HostingProtocol, deleteId?: string) => {
-    if (protocol === "bunnyStorage") return bunnyStorageDelete(hostingId, path, isDir);
+    if (protocol === "bunnyStorage") return bunnyStorageDelete(hostingId, path, isDir, deleteId);
     if (protocol === "sftp") return sftpDelete(hostingId, path, isDir, deleteId);
     return ftpDelete(hostingId, path, isDir, deleteId);
   }, []);

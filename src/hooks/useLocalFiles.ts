@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { FileItem } from "@/types/ftp";
 import { archiveListDir, fsList, fsGetHome } from "@/lib/tauri";
 import { toast } from "@/components/ui/sonner";
@@ -30,6 +30,7 @@ export function useLocalFiles() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const pickCloudStorageFolder = useCallback(async () => {
     const home = await fsGetHome();
@@ -54,12 +55,14 @@ export function useLocalFiles() {
   };
 
   const loadFiles = useCallback(async (nextLocation: LocalLocation, allowCloudStoragePicker = true) => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     try {
       const items = nextLocation.kind === "fs"
         ? await fsList(nextLocation.path)
         : await archiveListDir(nextLocation.archivePath, nextLocation.innerPath);
+      if (requestId !== requestIdRef.current) return;
       setFiles(items);
       setLocation(nextLocation);
       setPath(
@@ -93,20 +96,24 @@ export function useLocalFiles() {
           }
         } catch (pickerError) {
           const pickerMessage = String(pickerError);
-          setError(pickerMessage);
-          toast.error(t("toasts.onedrivePickFailed"), {
-            description: pickerMessage,
-          });
+          if (requestId === requestIdRef.current) {
+            setError(pickerMessage);
+            toast.error(t("toasts.onedrivePickFailed"), {
+              description: pickerMessage,
+            });
+          }
           return;
         }
       }
 
-      setError(message);
-      toast.error(t("toasts.folderOpenFailed"), {
-        description: message,
-      });
+      if (requestId === requestIdRef.current) {
+        setError(message);
+        toast.error(t("toasts.folderOpenFailed"), {
+          description: message,
+        });
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   }, [pickCloudStorageFolder, t]);
 

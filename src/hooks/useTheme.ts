@@ -3,15 +3,16 @@ import { useState, useEffect, useCallback } from "react";
 type Theme = "light" | "dark";
 
 const STORAGE_KEY = "loftp-theme";
+const DEFAULT_THEME: Theme = "light";
 
 function getInitialTheme(): Theme {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "light" || stored === "dark") return stored;
   } catch {
-    return "light";
+    return DEFAULT_THEME;
   }
-  return "light";
+  return DEFAULT_THEME;
 }
 
 export function useTheme() {

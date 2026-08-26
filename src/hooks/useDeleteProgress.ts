@@ -6,6 +6,7 @@ interface DeleteProgressPayload {
   deleteId: string;
   path: string;
   itemName: string;
+  completedItems?: number;
 }
 
 interface BeginDeleteParams {
@@ -133,6 +134,7 @@ export function useDeleteProgress(): DeleteProgressController {
         id: payload.deleteId,
         currentPath: payload.path,
         currentName: payload.itemName || fileNameFromPath(payload.path),
+        completedItems: typeof payload.completedItems === "number" ? payload.completedItems : undefined,
       });
     });
 

@@ -45,9 +45,9 @@ pub async fn fs_search(path: String, options: SearchOptions) -> Result<Vec<Searc
     let max_results = 1000;
 
     let walker = if options.recursive {
-        WalkDir::new(base).follow_links(true)
+        WalkDir::new(base).follow_links(false)
     } else {
-        WalkDir::new(base).max_depth(1).follow_links(true)
+        WalkDir::new(base).max_depth(1).follow_links(false)
     };
 
     for entry in walker.into_iter().filter_map(|e| e.ok()) {
@@ -58,8 +58,8 @@ pub async fn fs_search(path: String, options: SearchOptions) -> Result<Vec<Searc
         let entry_path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
 
-        // Skip hidden files and the base directory itself
-        if name.starts_with('.') || entry_path == base {
+        // Skip only the base directory itself; hidden files are valid file-manager entries.
+        if entry_path == base {
             continue;
         }
 

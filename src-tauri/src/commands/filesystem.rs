@@ -1,12 +1,27 @@
 use crate::models::file_item::FileItem;
+use crate::models::transfer::TransferOptions;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
-use std::io::{ErrorKind, Read, Write};
-use std::path::Path;
+use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use tauri::{AppHandle, Emitter};
+
+#[cfg(target_os = "macos")]
+use trash::macos::{DeleteMethod, TrashContextExtMacos};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteProgress {
+    delete_id: String,
+    path: String,
+    item_name: String,
+    completed_items: Option<u64>,
+}
 
 #[tauri::command]
 pub fn fs_list(path: String) -> Result<Vec<FileItem>, String> {
@@ -57,11 +72,6 @@ pub fn fs_list(path: String) -> Result<Vec<FileItem>, String> {
         };
 
         let name = entry.file_name().to_string_lossy().to_string();
-
-        // Skip hidden files starting with .
-        if name.starts_with('.') {
-            continue;
-        }
 
         let is_directory = metadata.is_dir();
         let size = if is_directory { 0 } else { metadata.len() };
@@ -185,13 +195,165 @@ pub fn fs_get_home() -> String {
 }
 
 #[tauri::command]
-pub fn fs_mkdir(path: String) -> Result<(), String> {
-    fs::create_dir_all(&path).map_err(|e| format!("Create dir failed: {}", e))
+pub fn fs_get_temp_dir() -> String {
+    std::env::temp_dir().to_string_lossy().to_string()
 }
 
 #[tauri::command]
-pub fn fs_delete(path: String) -> Result<(), String> {
-    trash::delete(&path).map_err(|e| format!("Move to trash failed: {}", e))
+pub fn fs_mkdir(path: String) -> Result<(), String> {
+    validate_operation_path(&path)?;
+    if Path::new(&path).symlink_metadata().is_ok() {
+        return Err(format!("Folder already exists: {}", path));
+    }
+    fs::create_dir_all(&path).map_err(|e| format!("Create dir failed: {}", e))
+}
+
+fn configured_trash_context() -> trash::TrashContext {
+    #[cfg(target_os = "macos")]
+    {
+        let mut trash_ctx = trash::TrashContext::new();
+        trash_ctx.set_delete_method(DeleteMethod::NsFileManager);
+        trash_ctx
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        trash::TrashContext::new()
+    }
+}
+
+fn emit_delete_progress(
+    app: Option<&AppHandle>,
+    delete_id: Option<&str>,
+    path: &Path,
+    completed_items: Option<u64>,
+) {
+    let (Some(app), Some(delete_id)) = (app, delete_id) else {
+        return;
+    };
+    let path_label = path.to_string_lossy().to_string();
+    let item_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| path_label.clone());
+    let _ = app.emit(
+        "delete-progress",
+        DeleteProgress {
+            delete_id: delete_id.to_string(),
+            path: path_label,
+            item_name,
+            completed_items,
+        },
+    );
+}
+
+fn validate_delete_path(path: &Path) -> Result<(), String> {
+    if path.as_os_str().is_empty() || path.file_name().is_none() {
+        return Err(format!(
+            "Refusing to delete unsafe path: {}",
+            path.display()
+        ));
+    }
+
+    let raw_path = path.to_string_lossy();
+    if raw_path
+        .split('/')
+        .any(|segment| segment.is_empty() == false && (segment == "." || segment == ".."))
+    {
+        return Err(format!(
+            "Refusing to delete unsafe path: {}",
+            path.display()
+        ));
+    }
+
+    if path.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::CurDir | std::path::Component::ParentDir
+        )
+    }) {
+        return Err(format!(
+            "Refusing to delete unsafe path: {}",
+            path.display()
+        ));
+    }
+
+    if path
+        .file_name()
+        .is_some_and(|name| name == "." || name == "..")
+    {
+        return Err(format!(
+            "Refusing to delete unsafe path: {}",
+            path.display()
+        ));
+    }
+
+    Ok(())
+}
+
+fn prepare_delete_paths(paths: Vec<String>) -> Result<Vec<PathBuf>, String> {
+    let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+    for path in &paths {
+        validate_delete_path(path)?;
+        if !path.symlink_metadata().is_ok() {
+            return Err(format!("Delete target not found: {}", path.display()));
+        }
+    }
+    Ok(paths)
+}
+
+fn delete_paths_to_trash(
+    app: Option<&AppHandle>,
+    delete_id: Option<&str>,
+    paths: Vec<String>,
+) -> Result<(), String> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+
+    let paths = prepare_delete_paths(paths)?;
+    let trash_ctx = configured_trash_context();
+
+    for (index, path) in paths.iter().enumerate() {
+        emit_delete_progress(app, delete_id, path, Some(index as u64));
+        trash_ctx
+            .delete(path)
+            .map_err(|e| format!("Move to trash failed: {}", e))?;
+        emit_delete_progress(app, delete_id, path, Some((index + 1) as u64));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn fs_delete(app: AppHandle, path: String) -> Result<(), String> {
+    delete_paths_to_trash(Some(&app), None, vec![path])
+}
+
+#[tauri::command]
+pub fn fs_remove(path: String) -> Result<(), String> {
+    let mut paths = prepare_delete_paths(vec![path])?;
+    let target = paths
+        .pop()
+        .ok_or_else(|| "No path to remove.".to_string())?;
+    let metadata = target
+        .symlink_metadata()
+        .map_err(|e| format!("Read remove target failed: {}", e))?;
+
+    if metadata.file_type().is_dir() {
+        fs::remove_dir_all(&target).map_err(|e| format!("Remove directory failed: {}", e))
+    } else {
+        fs::remove_file(&target).map_err(|e| format!("Remove file failed: {}", e))
+    }
+}
+
+#[tauri::command]
+pub fn fs_delete_many(
+    app: AppHandle,
+    paths: Vec<String>,
+    delete_id: Option<String>,
+) -> Result<(), String> {
+    delete_paths_to_trash(Some(&app), delete_id.as_deref(), paths)
 }
 
 #[tauri::command]
@@ -201,29 +363,38 @@ pub fn fs_is_dir(path: String) -> bool {
 
 #[tauri::command]
 pub fn fs_rename(from: String, to: String) -> Result<(), String> {
+    validate_operation_path(&from)?;
+    validate_operation_path(&to)?;
+    if Path::new(&to).symlink_metadata().is_ok() {
+        return Err(format!("Rename target already exists: {}", to));
+    }
     fs::rename(&from, &to).map_err(|e| format!("Rename failed: {}", e))
 }
 
 #[tauri::command]
-pub fn fs_copy(from: String, to: String) -> Result<(), String> {
-    let src = Path::new(&from);
-    if !src.exists() {
-        return Err(format!("Source not found: {}", from));
-    }
-    if let Some(parent) = Path::new(&to).parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("Create dir failed: {}", e))?;
-    }
-    fs::copy(&from, &to).map_err(|e| format!("Copy failed: {}", e))?;
-    Ok(())
+pub fn fs_copy(from: String, to: String, options: Option<TransferOptions>) -> Result<(), String> {
+    validate_operation_path(&from)?;
+    validate_operation_path(&to)?;
+    copy_entry(
+        Path::new(&from),
+        Path::new(&to),
+        &options.unwrap_or_default(),
+    )
 }
 
 #[tauri::command]
-pub fn fs_copy_dir(from: String, to: String) -> Result<(), String> {
-    let src = Path::new(&from);
-    if !src.exists() {
-        return Err(format!("Source not found: {}", from));
-    }
-    copy_dir_recursive(src, Path::new(&to))
+pub fn fs_copy_dir(
+    from: String,
+    to: String,
+    options: Option<TransferOptions>,
+) -> Result<(), String> {
+    validate_operation_path(&from)?;
+    validate_operation_path(&to)?;
+    copy_entry(
+        Path::new(&from),
+        Path::new(&to),
+        &options.unwrap_or_default(),
+    )
 }
 
 #[tauri::command]
@@ -340,19 +511,275 @@ pub fn fs_combine_files(parts: Vec<String>, output_path: String) -> Result<(), S
     Ok(())
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+fn validate_operation_path(path: &str) -> Result<(), String> {
+    if path.is_empty() || path.as_bytes().contains(&0) {
+        return Err(format!("Invalid filesystem path: {}", path));
+    }
+    if path
+        .split(|character| character == '/' || character == '\\')
+        .any(|segment| segment == "." || segment == "..")
+        || Path::new(path).components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::CurDir | std::path::Component::ParentDir
+            )
+        })
+    {
+        return Err(format!("Path must not contain . or ..: {}", path));
+    }
+    Ok(())
+}
+
+fn copy_entry(src: &Path, dst: &Path, options: &TransferOptions) -> Result<(), String> {
+    let mut visited = HashSet::new();
+    copy_entry_inner(src, dst, options, &mut visited)
+}
+
+fn copy_entry_inner(
+    src: &Path,
+    dst: &Path,
+    options: &TransferOptions,
+    visited: &mut HashSet<PathBuf>,
+) -> Result<(), String> {
+    let source_link_metadata = src
+        .symlink_metadata()
+        .map_err(|e| format!("Read source failed: {}", e))?;
+    let source_is_symlink = source_link_metadata.file_type().is_symlink();
+    let source_metadata = if source_is_symlink && options.follow_symlinks {
+        fs::metadata(src).map_err(|e| format!("Resolve symlink failed: {}", e))?
+    } else {
+        source_link_metadata.clone()
+    };
+    let source_is_dir = source_metadata.is_dir();
+    let destination = match resolve_copy_destination(src, dst, source_is_dir, options)? {
+        Some(path) => path,
+        None => return Ok(()),
+    };
+
+    if let Some(parent) = destination.parent() {
+        if options.create_dirs {
+            fs::create_dir_all(parent).map_err(|e| format!("Create dir failed: {}", e))?;
+        } else if !parent.is_dir() {
+            return Err(format!(
+                "Destination folder not found: {}",
+                parent.display()
+            ));
+        }
+    }
+
+    if source_is_symlink && !options.follow_symlinks {
+        copy_symlink(src, &destination)?;
+        return Ok(());
+    }
+
+    if source_is_dir {
+        copy_directory(src, &destination, options, visited)?;
+    } else {
+        copy_file(src, &destination, options)?;
+    }
+
+    preserve_metadata(src, &destination, options)?;
+    if options.verify_after_transfer && !source_is_dir && !files_equal(src, &destination)? {
+        return Err(format!("Verification failed for {}", src.display()));
+    }
+    Ok(())
+}
+
+fn resolve_copy_destination(
+    src: &Path,
+    dst: &Path,
+    source_is_dir: bool,
+    options: &TransferOptions,
+) -> Result<Option<PathBuf>, String> {
+    let Ok(destination_metadata) = dst.symlink_metadata() else {
+        return Ok(Some(dst.to_path_buf()));
+    };
+
+    if source_is_dir {
+        if destination_metadata.is_dir() {
+            if options.overwrite == "skip" {
+                return Ok(None);
+            }
+            if options.overwrite == "rename" {
+                return Ok(Some(unique_copy_path(dst)));
+            }
+            return Ok(Some(dst.to_path_buf()));
+        }
+        return Err(format!("Cannot copy folder {} over a file.", src.display()));
+    }
+
+    if destination_metadata.is_dir() {
+        return Err(format!("Cannot copy file {} over a folder.", src.display()));
+    }
+
+    match options.overwrite.as_str() {
+        "skip" => Ok(None),
+        "rename" => Ok(Some(unique_copy_path(dst))),
+        "ask" => Err(format!("Destination already exists: {}", dst.display())),
+        "overwrite-older" => {
+            let source_time = src.metadata().and_then(|m| m.modified()).ok();
+            let destination_time = dst.metadata().and_then(|m| m.modified()).ok();
+            if source_time
+                .zip(destination_time)
+                .is_some_and(|(source, destination)| destination >= source)
+            {
+                Ok(None)
+            } else {
+                Ok(Some(dst.to_path_buf()))
+            }
+        }
+        _ => Ok(Some(dst.to_path_buf())),
+    }
+}
+
+fn copy_directory(
+    src: &Path,
+    dst: &Path,
+    options: &TransferOptions,
+    visited: &mut HashSet<PathBuf>,
+) -> Result<(), String> {
+    let identity = fs::canonicalize(src).unwrap_or_else(|_| src.to_path_buf());
+    if !visited.insert(identity) {
+        return Err(format!(
+            "Symlink cycle detected while copying: {}",
+            src.display()
+        ));
+    }
     fs::create_dir_all(dst).map_err(|e| format!("Create dir failed: {}", e))?;
     for entry in fs::read_dir(src).map_err(|e| format!("Read dir failed: {}", e))? {
         let entry = entry.map_err(|e| format!("Entry error: {}", e))?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
+        copy_entry_inner(
+            &entry.path(),
+            &dst.join(entry.file_name()),
+            options,
+            visited,
+        )?;
+    }
+    visited.remove(&fs::canonicalize(src).unwrap_or_else(|_| src.to_path_buf()));
+    Ok(())
+}
+
+fn copy_file(src: &Path, dst: &Path, options: &TransferOptions) -> Result<(), String> {
+    let source_len = fs::metadata(src)
+        .map_err(|e| format!("Read source metadata failed: {}", e))?
+        .len();
+    let mut resumed = false;
+
+    if options.resume && dst.is_file() {
+        let destination_len = fs::metadata(dst)
+            .map_err(|e| format!("Read destination metadata failed: {}", e))?
+            .len();
+        if destination_len < source_len && files_have_prefix(src, dst, destination_len)? {
+            let mut input =
+                fs::File::open(src).map_err(|e| format!("Open source failed: {}", e))?;
+            input
+                .seek(SeekFrom::Start(destination_len))
+                .map_err(|e| format!("Seek source failed: {}", e))?;
+            let mut output = fs::OpenOptions::new()
+                .append(true)
+                .open(dst)
+                .map_err(|e| format!("Open destination failed: {}", e))?;
+            std::io::copy(&mut input, &mut output)
+                .map_err(|e| format!("Resume copy failed: {}", e))?;
+            resumed = true;
+        }
+    }
+
+    if !resumed {
+        fs::copy(src, dst).map_err(|e| format!("Copy failed: {}", e))?;
+    }
+    Ok(())
+}
+
+fn copy_symlink(src: &Path, dst: &Path) -> Result<(), String> {
+    if dst.symlink_metadata().is_ok() {
+        if dst.is_dir() {
+            fs::remove_dir_all(dst).map_err(|e| format!("Remove destination failed: {}", e))?;
         } else {
-            fs::copy(&src_path, &dst_path).map_err(|e| format!("Copy failed: {}", e))?;
+            fs::remove_file(dst).map_err(|e| format!("Remove destination failed: {}", e))?;
+        }
+    }
+    let target = fs::read_link(src).map_err(|e| format!("Read symlink failed: {}", e))?;
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, dst).map_err(|e| format!("Create symlink failed: {}", e))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = target;
+        Err("Copying symlinks is not supported on this platform.".to_string())
+    }
+}
+
+fn preserve_metadata(src: &Path, dst: &Path, options: &TransferOptions) -> Result<(), String> {
+    if options.preserve_permissions {
+        let permissions = fs::metadata(src)
+            .map_err(|e| format!("Read source permissions failed: {}", e))?
+            .permissions();
+        fs::set_permissions(dst, permissions)
+            .map_err(|e| format!("Preserve permissions failed: {}", e))?;
+    }
+    if options.preserve_timestamps {
+        let status = Command::new("touch")
+            .args(["-r", &src.to_string_lossy(), &dst.to_string_lossy()])
+            .status()
+            .map_err(|e| format!("Preserve timestamps failed: {}", e))?;
+        if !status.success() {
+            return Err(format!("Preserve timestamps failed for {}", dst.display()));
         }
     }
     Ok(())
+}
+
+fn files_have_prefix(src: &Path, dst: &Path, length: u64) -> Result<bool, String> {
+    let mut source = fs::File::open(src).map_err(|e| format!("Open source failed: {}", e))?;
+    let mut target = fs::File::open(dst).map_err(|e| format!("Open destination failed: {}", e))?;
+    let mut source_buffer = [0u8; 1024 * 1024];
+    let mut target_buffer = [0u8; 1024 * 1024];
+    let mut remaining = length;
+    while remaining > 0 {
+        let size = remaining.min(source_buffer.len() as u64) as usize;
+        source
+            .read_exact(&mut source_buffer[..size])
+            .map_err(|e| format!("Read source failed: {}", e))?;
+        target
+            .read_exact(&mut target_buffer[..size])
+            .map_err(|e| format!("Read destination failed: {}", e))?;
+        if source_buffer[..size] != target_buffer[..size] {
+            return Ok(false);
+        }
+        remaining -= size as u64;
+    }
+    Ok(true)
+}
+
+fn files_equal(src: &Path, dst: &Path) -> Result<bool, String> {
+    let source_len = fs::metadata(src)
+        .map_err(|e| format!("Read source metadata failed: {}", e))?
+        .len();
+    let destination_len = fs::metadata(dst)
+        .map_err(|e| format!("Read destination metadata failed: {}", e))?
+        .len();
+    Ok(source_len == destination_len && files_have_prefix(src, dst, source_len)?)
+}
+
+fn unique_copy_path(path: &Path) -> PathBuf {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = path
+        .file_stem()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| "copy".to_string());
+    let extension = path
+        .extension()
+        .map(|value| format!(".{}", value.to_string_lossy()))
+        .unwrap_or_default();
+    for index in 1..1000 {
+        let candidate = parent.join(format!("{}_copy{}{}", stem, index, extension));
+        if candidate.symlink_metadata().is_err() {
+            return candidate;
+        }
+    }
+    parent.join(format!("{}_copy1000{}", stem, extension))
 }
 
 // --- Volume listing (macOS) ---
@@ -518,4 +945,60 @@ fn fs2_statvfs(path: &str) -> Result<(u64, u64), String> {
     let total = stat.f_blocks as u64 * stat.f_frsize as u64;
     let free = stat.f_bavail as u64 * stat.f_frsize as u64;
     Ok((total, free))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{copy_entry, validate_delete_path, validate_operation_path};
+    use crate::models::transfer::TransferOptions;
+    use std::fs;
+    use std::path::Path;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn delete_path_rejects_root_and_parent_traversal() {
+        for path in ["", "/", ".", "..", "/tmp/../file", "/tmp/./file"] {
+            assert!(
+                validate_delete_path(Path::new(path)).is_err(),
+                "accepted {}",
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn delete_path_accepts_normal_target() {
+        assert!(validate_delete_path(Path::new("/tmp/loftp-delete-target")).is_ok());
+    }
+
+    #[test]
+    fn operation_path_rejects_traversal() {
+        assert!(validate_operation_path("/tmp/../outside").is_err());
+        assert!(validate_operation_path("/tmp/./outside").is_err());
+        assert!(validate_operation_path("/tmp/inside").is_ok());
+    }
+
+    #[test]
+    fn copy_skip_does_not_replace_existing_file() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root =
+            std::env::temp_dir().join(format!("loftp-copy-test-{}-{}", std::process::id(), suffix));
+        fs::create_dir_all(&root).expect("create test directory");
+        let source = root.join("source.txt");
+        let destination = root.join("destination.txt");
+        fs::write(&source, b"new").expect("write source");
+        fs::write(&destination, b"old").expect("write destination");
+
+        let options = TransferOptions {
+            overwrite: "skip".to_string(),
+            ..TransferOptions::default()
+        };
+        copy_entry(&source, &destination, &options).expect("copy");
+
+        assert_eq!(fs::read(&destination).expect("read destination"), b"old");
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
 }

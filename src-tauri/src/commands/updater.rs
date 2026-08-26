@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
-const DEFAULT_UPDATER_ENDPOINT: &str = "https://downloads.loftp.mylocalio.com/stable/latest.json";
+const DEFAULT_UPDATER_ENDPOINT: &str = "https://downloads.loftp.space/stable/latest.json";
 const CONFIGURED_UPDATER_PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZDOTQ2MUE1NDlDQjI1MjAKUldRZ0pjdEpwV0dVL0FldFppQ3dHajhzRm5tQ3dMUStzKzFYOVYyVTU4WmpNcjdtV0xaRXZ3UzgK";
 
 pub struct PendingUpdateState {

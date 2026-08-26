@@ -17,6 +17,17 @@ export interface TransferOptionsPayload {
   verifyAfterTransfer: boolean;
 }
 
+export const DEFAULT_TRANSFER_OPTIONS: TransferOptionsPayload = {
+  mode: "auto",
+  overwrite: "overwrite-older",
+  resume: true,
+  preserveTimestamps: true,
+  preservePermissions: false,
+  followSymlinks: true,
+  createDirs: true,
+  verifyAfterTransfer: false,
+};
+
 // --- Filesystem ---
 
 export async function fsList(path: string): Promise<FileItem[]> {
@@ -27,12 +38,24 @@ export async function fsGetHome(): Promise<string> {
   return invoke("fs_get_home");
 }
 
+export async function fsGetTempDir(): Promise<string> {
+  return invoke("fs_get_temp_dir");
+}
+
 export async function fsMkdir(path: string): Promise<void> {
   return invoke("fs_mkdir", { path });
 }
 
 export async function fsDelete(path: string): Promise<void> {
   return invoke("fs_delete", { path });
+}
+
+export async function fsRemove(path: string): Promise<void> {
+  return invoke("fs_remove", { path });
+}
+
+export async function fsDeleteMany(paths: string[], deleteId?: string): Promise<void> {
+  return invoke("fs_delete_many", { paths, deleteId: deleteId ?? null });
 }
 
 export async function fsIsDir(path: string): Promise<boolean> {
@@ -43,12 +66,12 @@ export async function fsRename(from: string, to: string): Promise<void> {
   return invoke("fs_rename", { from, to });
 }
 
-export async function fsCopy(from: string, to: string): Promise<void> {
-  return invoke("fs_copy", { from, to });
+export async function fsCopy(from: string, to: string, options?: TransferOptionsPayload): Promise<void> {
+  return invoke("fs_copy", { from, to, options: options ?? null });
 }
 
-export async function fsCopyDir(from: string, to: string): Promise<void> {
-  return invoke("fs_copy_dir", { from, to });
+export async function fsCopyDir(from: string, to: string, options?: TransferOptionsPayload): Promise<void> {
+  return invoke("fs_copy_dir", { from, to, options: options ?? null });
 }
 
 export async function fsChmod(path: string, mode: string): Promise<void> {
@@ -178,8 +201,8 @@ export async function bunnyStorageMkdir(hostingId: string, path: string): Promis
   return invoke("bunny_storage_mkdir", { hostingId, path });
 }
 
-export async function bunnyStorageDelete(hostingId: string, path: string, isDir: boolean): Promise<void> {
-  return invoke("bunny_storage_delete", { hostingId, path, isDir });
+export async function bunnyStorageDelete(hostingId: string, path: string, isDir: boolean, deleteId?: string): Promise<void> {
+  return invoke("bunny_storage_delete", { hostingId, path, isDir, deleteId: deleteId ?? null });
 }
 
 export async function bunnyStorageRename(hostingId: string, from: string, to: string): Promise<void> {
@@ -287,8 +310,8 @@ export async function archiveListDir(path: string, innerPath?: string): Promise<
   return invoke("archive_list_dir", { path, innerPath: innerPath ?? null });
 }
 
-export async function archiveExtract(archivePath: string, targetDir: string, files?: string[]): Promise<void> {
-  return invoke("archive_extract", { archivePath, targetDir, files: files ?? null });
+export async function archiveExtract(archivePath: string, targetDir: string, files?: string[], stripPrefix?: string): Promise<void> {
+  return invoke("archive_extract", { archivePath, targetDir, files: files ?? null, stripPrefix: stripPrefix ?? null });
 }
 
 export async function archiveCreate(outputPath: string, sourcePaths: string[], baseDir: string): Promise<void> {

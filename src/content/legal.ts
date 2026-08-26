@@ -1,5 +1,5 @@
 export const copyrightNotice = "© 2026 Localio Labs s.r.o. LoFTP je veřejně sdílený projekt.";
-export const websiteUrl = "https://www.mylocalio.com";
+export const websiteUrl = "https://www.loftp.space";
 export const productWebsiteUrl = "https://www.loftp.space";
 
 export const eulaSections = [
@@ -57,7 +57,7 @@ export const privacySections = [
   {
     heading: "Správce údajů",
     paragraphs: [
-      "Správcem vašich osobních údajů je společnost Localio Labs s.r.o., se sídlem v České republice. S dotazy ohledně zpracování osobních údajů se na nás můžete obrátit prostřednictvím kontaktního formuláře na www.mylocalio.com.",
+      "Správcem vašich osobních údajů je společnost Localio Labs s.r.o., se sídlem v České republice. S dotazy ohledně zpracování osobních údajů se na nás můžete obrátit prostřednictvím kontaktního formuláře na www.loftp.space.",
     ],
   },
   {
@@ -93,7 +93,7 @@ export const privacySections = [
     heading: "Vaše práva",
     paragraphs: [
       "V souladu s nařízením GDPR máte právo na přístup ke svým osobním údajům, jejich opravu, výmaz, omezení zpracování, přenositelnost údajů a právo vznést námitku proti zpracování.",
-      "Pro uplatnění svých práv nás kontaktujte prostřednictvím www.mylocalio.com. Na vaši žádost odpovíme bez zbytečného odkladu, nejpozději do 30 dnů.",
+      "Pro uplatnění svých práv nás kontaktujte prostřednictvím www.loftp.space. Na vaši žádost odpovíme bez zbytečného odkladu, nejpozději do 30 dnů.",
       "Máte rovněž právo podat stížnost u Úřadu pro ochranu osobních údajů (www.uoou.cz).",
     ],
   },

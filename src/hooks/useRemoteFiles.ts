@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { FileItem, HostingConfig, HostingProtocol } from "@/types/ftp";
 
 interface RemoteConnectionLike {
@@ -9,16 +9,20 @@ interface RemoteConnectionLike {
 export function useRemoteFiles(connection: RemoteConnectionLike, onClearSelection: () => void) {
   const [path, setPath] = useState("/");
   const [files, setFiles] = useState<FileItem[]>([]);
+  const requestIdRef = useRef(0);
 
   const load = useCallback(
     async (host: HostingConfig, nextPath: string) => {
+      const requestId = ++requestIdRef.current;
       try {
         const nextFiles = await connection.listRemote(host.id, nextPath, host.protocol);
+        if (requestId !== requestIdRef.current) return nextFiles;
         setFiles(nextFiles);
         setPath(nextPath);
         onClearSelection();
         return nextFiles;
       } catch (error) {
+        if (requestId !== requestIdRef.current) return [];
         setFiles([]);
         onClearSelection();
         throw error;

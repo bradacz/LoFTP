@@ -26,7 +26,8 @@ interface TransferDialogProps {
   files: string[];
   fromPath: string;
   toPath: string;
-  direction: "upload" | "download" | "local-copy" | "archive-extract";
+  direction: "upload" | "download" | "local-copy" | "remote-copy" | "archive-extract";
+  operation?: "copy" | "move";
   transfers: TransferItem[];
   transferring: boolean;
 }
@@ -40,6 +41,12 @@ const defaultOptions: TransferOptions = {
   followSymlinks: true,
   createDirs: true,
   verifyAfterTransfer: false,
+};
+
+const moveDefaultOptions: TransferOptions = {
+  ...defaultOptions,
+  // A move must not silently discard the source when the destination exists.
+  overwrite: "rename",
 };
 
 /* ── Helpers ── */
@@ -96,29 +103,36 @@ function SignalBars({ speed }: { speed: number }) {
 
 export function TransferDialog({
   open, onClose, onConfirm, files, fromPath, toPath, direction,
-  transfers, transferring,
+  operation = "copy", transfers, transferring,
 }: TransferDialogProps) {
   const { t } = useI18n();
   const [options, setOptions] = useState<TransferOptions>(defaultOptions);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const isLocalCopy = direction === "local-copy";
+  const isArchiveTransfer = direction === "archive-extract";
+  const supportsSymlinkOption = isLocalCopy || direction === "upload" || direction === "remote-copy";
 
   const set = <K extends keyof TransferOptions>(key: K, value: TransferOptions[K]) =>
     setOptions((prev) => ({ ...prev, [key]: value }));
 
-  const dirLabel = direction === "upload"
+  const dirLabel = operation === "move"
+    ? t("functionKeys.move")
+    : direction === "upload"
     ? "Upload"
     : direction === "download"
       ? "Download"
       : direction === "archive-extract"
-        ? t("transferDialog.extract")
+      ? t("transferDialog.extract")
         : t("transferDialog.copy");
 
-  const actionLabel = direction === "upload"
+  const actionLabel = operation === "move"
+    ? t("functionKeys.move")
+    : direction === "upload"
     ? t("toolbar.upload")
     : direction === "download"
       ? t("toolbar.download")
       : direction === "archive-extract"
-        ? t("transferDialog.extract")
+      ? t("transferDialog.extract")
         : t("transferDialog.copy");
 
   const fileCountLabel = files.length === 1
@@ -160,6 +174,13 @@ export function TransferDialog({
       return () => clearTimeout(timer);
     }
   }, [allDone, errors.length, onClose]);
+
+  useEffect(() => {
+    if (open && !transferring) {
+      setOptions(operation === "move" ? moveDefaultOptions : defaultOptions);
+      setShowAdvanced(false);
+    }
+  }, [direction, files, fromPath, open, operation, toPath, transferring]);
 
   const handleCancelAll = () => {
     active.forEach((item) => cancelTransfer(item.id));
@@ -210,53 +231,42 @@ export function TransferDialog({
             )}
           </div>
 
-          {/* Collision policy */}
-          <Section label={t("transferDialog.overwriteExisting")}>
-            <PillGroup
-              options={[
-                { value: "overwrite-older", label: t("transferDialog.overwriteOlder") },
-                { value: "overwrite", label: t("transferDialog.overwrite") },
-                { value: "skip", label: t("transferDialog.skip") },
-                { value: "rename", label: t("transferDialog.rename") },
-              ]}
-              selected={options.overwrite}
-              onChange={(v) => set("overwrite", v as TransferOptions["overwrite"])}
-            />
-          </Section>
+          {!isArchiveTransfer && (
+            <Section label={t("transferDialog.overwriteExisting")}>
+              <PillGroup
+                options={[
+                  { value: "overwrite-older", label: t("transferDialog.overwriteOlder") },
+                  { value: "overwrite", label: t("transferDialog.overwrite") },
+                  { value: "skip", label: t("transferDialog.skip") },
+                  { value: "rename", label: t("transferDialog.rename") },
+                ]}
+                selected={options.overwrite}
+                onChange={(v) => set("overwrite", v as TransferOptions["overwrite"])}
+              />
+            </Section>
+          )}
 
-          {/* Advanced toggle */}
-          <button
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-1 text-[10px] text-[#52525b] hover:text-[#71717a] transition-colors"
-          >
-            {showAdvanced ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-            {t("transferDialog.advancedOptions")}
-          </button>
+          {!isArchiveTransfer && (
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center gap-1 text-[10px] text-[#52525b] hover:text-[#71717a] transition-colors"
+            >
+              {showAdvanced ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              {t("transferDialog.advancedOptions")}
+            </button>
+          )}
 
-          {showAdvanced && (
-            <div className="space-y-2.5">
-              <Section label={t("transferDialog.transferMode")}>
-                <PillGroup
-                  options={[
-                    { value: "auto", label: t("transferDialog.auto") },
-                    { value: "binary", label: t("transferDialog.binary") },
-                    { value: "ascii", label: "ASCII" },
-                  ]}
-                  selected={options.mode}
-                  onChange={(v) => set("mode", v as TransferOptions["mode"])}
-                />
-              </Section>
-              <Section label={t("transferDialog.options")}>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-[3px]">
-                  <ToggleCheck label={t("transferDialog.resume")} checked={options.resume} onChange={(v) => set("resume", v)} />
-                  <ToggleCheck label={t("transferDialog.preserveTimestamps")} checked={options.preserveTimestamps} onChange={(v) => set("preserveTimestamps", v)} />
-                  <ToggleCheck label={t("transferDialog.preservePermissions")} checked={options.preservePermissions} onChange={(v) => set("preservePermissions", v)} />
-                  <ToggleCheck label={t("transferDialog.followSymlinks")} checked={options.followSymlinks} onChange={(v) => set("followSymlinks", v)} />
-                  <ToggleCheck label={t("transferDialog.createDirs")} checked={options.createDirs} onChange={(v) => set("createDirs", v)} />
-                  <ToggleCheck label={t("transferDialog.verify")} checked={options.verifyAfterTransfer} onChange={(v) => set("verifyAfterTransfer", v)} />
-                </div>
-              </Section>
-            </div>
+          {showAdvanced && !isArchiveTransfer && (
+            <Section label={t("transferDialog.options")}>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-[3px]">
+                {isLocalCopy && <ToggleCheck label={t("transferDialog.resume")} checked={options.resume} onChange={(v) => set("resume", v)} />}
+                {isLocalCopy && <ToggleCheck label={t("transferDialog.preserveTimestamps")} checked={options.preserveTimestamps} onChange={(v) => set("preserveTimestamps", v)} />}
+                {isLocalCopy && <ToggleCheck label={t("transferDialog.preservePermissions")} checked={options.preservePermissions} onChange={(v) => set("preservePermissions", v)} />}
+                {supportsSymlinkOption && <ToggleCheck label={t("transferDialog.followSymlinks")} checked={options.followSymlinks} onChange={(v) => set("followSymlinks", v)} />}
+                <ToggleCheck label={t("transferDialog.createDirs")} checked={options.createDirs} onChange={(v) => set("createDirs", v)} />
+                {isLocalCopy && <ToggleCheck label={t("transferDialog.verify")} checked={options.verifyAfterTransfer} onChange={(v) => set("verifyAfterTransfer", v)} />}
+              </div>
+            </Section>
           )}
         </div>
 

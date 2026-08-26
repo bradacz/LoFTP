@@ -9,7 +9,7 @@ Pokud nejsou nastaveny, aplikace zobrazi v `About` updater jako nenakonfigurovan
 
 ## Doporuceny endpoint
 
-- `https://downloads.loftp.mylocalio.com/stable/latest.json`
+- `https://downloads.loftp.space/stable/latest.json`
 
 ## R2 struktura
 

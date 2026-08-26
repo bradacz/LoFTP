@@ -8,6 +8,7 @@ import {
   bunnyStorageUpload, bunnyStorageDownload, bunnyStorageUploadDir, bunnyStorageDownloadDir,
   TransferOptionsPayload,
 } from "@/lib/tauri";
+import { joinPath } from "@/lib/utils";
 
 interface TransferProgressPayload {
   transferId: string;
@@ -112,9 +113,10 @@ export function useTransfers() {
       protocol: HostingProtocol,
       options?: TransferOptionsPayload,
     ) => {
+      let success = true;
       for (const file of files) {
         const transferId = crypto.randomUUID();
-        const remoteTarget = `${remotePath}/${file.name}`;
+        const remoteTarget = joinPath(remotePath, file.name);
 
         setTransfers((prev) => [
           {
@@ -156,11 +158,13 @@ export function useTransfers() {
             }
           }
         } catch (e) {
+          success = false;
           setTransfers((prev) =>
-            prev.map((t) => (t.id === transferId ? { ...t, status: "error" as const } : t))
+            prev.map((t) => (t.id === transferId ? { ...t, status: "error" as const, error: String(e) } : t))
           );
         }
       }
+      return success;
     },
     []
   );
@@ -173,9 +177,10 @@ export function useTransfers() {
       protocol: HostingProtocol,
       options?: TransferOptionsPayload,
     ) => {
+      let success = true;
       for (const file of files) {
         const transferId = crypto.randomUUID();
-        const localTarget = `${localPath}/${file.name}`;
+        const localTarget = joinPath(localPath, file.name);
 
         setTransfers((prev) => [
           {
@@ -217,14 +222,20 @@ export function useTransfers() {
             }
           }
         } catch (e) {
+          success = false;
           setTransfers((prev) =>
-            prev.map((t) => (t.id === transferId ? { ...t, status: "error" as const } : t))
+            prev.map((t) => (t.id === transferId ? { ...t, status: "error" as const, error: String(e) } : t))
           );
         }
       }
+      return success;
     },
     []
   );
 
-  return { transfers, startUpload, startDownload };
+  const resetForTransfer = useCallback(() => {
+    setTransfers((prev) => prev.filter((item) => item.status === "pending" || item.status === "transferring"));
+  }, []);
+
+  return { transfers, startUpload, startDownload, resetForTransfer };
 }

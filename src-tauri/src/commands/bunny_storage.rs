@@ -30,6 +30,14 @@ struct ProgressSnapshot {
     total_files: Option<u64>,
 }
 
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteProgress {
+    delete_id: String,
+    path: String,
+    item_name: String,
+}
+
 impl BunnyStorageState {
     pub fn new() -> Self {
         Self {
@@ -99,7 +107,7 @@ pub async fn bunny_storage_upload(
     let cancel_token = cancel_state.register(&transfer_id);
     let file_name = path_label(&local_path);
     let total_bytes = std::fs::metadata(&local_path).map(|m| m.len()).unwrap_or(0);
-    if should_skip_remote(&session, &remote_path, &options).await? {
+    if should_skip_remote(&session, &remote_path, &local_path, &options).await? {
         cancel_state.remove(&transfer_id);
         emit_finish(&app, &transfer_id, &file_name, total_bytes, true);
         return Ok(());
@@ -162,7 +170,7 @@ pub async fn bunny_storage_download(
     let session = get_session(&state, &hosting_id)?;
     let cancel_token = cancel_state.register(&transfer_id);
     let file_name = path_label(&remote_path);
-    if should_skip_local(&local_path, &options) {
+    if should_skip_local(&session, &remote_path, &local_path, &options).await? {
         cancel_state.remove(&transfer_id);
         emit_finish(&app, &transfer_id, &file_name, 0, true);
         return Ok(());
@@ -226,7 +234,27 @@ pub async fn bunny_storage_upload_dir(
 ) -> Result<(), String> {
     let session = get_session(&state, &hosting_id)?;
     let cancel_token = cancel_state.register(&transfer_id);
-    let entries = collect_local_files(&local_dir)?;
+    let mut remote_dir = remote_dir;
+    if session.exists(&remote_dir).await? {
+        match options.as_ref().map(|opts| opts.overwrite.as_str()) {
+            Some("skip") => {
+                cancel_state.remove(&transfer_id);
+                emit_finish(&app, &transfer_id, &path_label(&local_dir), 0, true);
+                return Ok(());
+            }
+            Some("rename") => remote_dir = unique_remote_path(&session, &remote_dir).await?,
+            Some("ask") => {
+                cancel_state.remove(&transfer_id);
+                return Err(format!("Destination already exists: {}", remote_dir));
+            }
+            _ => {}
+        }
+    }
+    let follow_symlinks = options
+        .as_ref()
+        .map(|opts| opts.follow_symlinks)
+        .unwrap_or(true);
+    let entries = collect_local_files(&local_dir, follow_symlinks)?;
     let dir_name = path_label(&local_dir);
     let total_files = entries.len() as u64;
     let total_bytes = entries
@@ -266,11 +294,13 @@ pub async fn bunny_storage_upload_dir(
             ),
         );
 
-        if should_skip_remote(&session, &remote_file, &options).await? {
+        if should_skip_remote(&session, &remote_file, &entry.full_path, &options).await? {
             transferred_bytes += file_total;
             completed_files += 1;
             continue;
         }
+
+        let remote_file = resolve_remote_target(&session, &remote_file, &options).await?;
 
         let progress_app = app.clone();
         let progress_transfer_id = transfer_id.clone();
@@ -357,6 +387,22 @@ pub async fn bunny_storage_download_dir(
 ) -> Result<(), String> {
     let session = get_session(&state, &hosting_id)?;
     let cancel_token = cancel_state.register(&transfer_id);
+    let mut local_dir = local_dir;
+    if std::path::Path::new(&local_dir).exists() {
+        match options.as_ref().map(|opts| opts.overwrite.as_str()) {
+            Some("skip") => {
+                cancel_state.remove(&transfer_id);
+                emit_finish(&app, &transfer_id, &path_label(&remote_dir), 0, true);
+                return Ok(());
+            }
+            Some("rename") => local_dir = unique_local_path(&local_dir),
+            Some("ask") => {
+                cancel_state.remove(&transfer_id);
+                return Err(format!("Destination already exists: {}", local_dir));
+            }
+            _ => {}
+        }
+    }
     let dir_name = path_label(&remote_dir);
     let mut files = Vec::new();
     collect_remote_files(&session, &remote_dir, "", &mut files).await?;
@@ -373,7 +419,10 @@ pub async fn bunny_storage_download_dir(
         }
 
         let remote_file = join_remote_path(&remote_dir, &rel_path);
-        let local_file = format!("{}/{}", local_dir.trim_end_matches('/'), rel_path);
+        let local_file = std::path::Path::new(&local_dir)
+            .join(&rel_path)
+            .to_string_lossy()
+            .to_string();
         emit_progress(
             &app,
             &transfer_id,
@@ -389,11 +438,13 @@ pub async fn bunny_storage_download_dir(
             ),
         );
 
-        if should_skip_local(&local_file, &options) {
+        if should_skip_local(&session, &remote_file, &local_file, &options).await? {
             transferred_bytes += item.size;
             completed_files += 1;
             continue;
         }
+
+        let local_file = resolve_local_target(&local_file, &options)?;
 
         let progress_app = app.clone();
         let progress_transfer_id = transfer_id.clone();
@@ -473,19 +524,75 @@ pub async fn bunny_storage_mkdir(
     hosting_id: String,
     path: String,
 ) -> Result<(), String> {
-    get_session(&state, &hosting_id)?.mkdir(&path).await
+    validate_remote_operation_path(&path)?;
+    let session = get_session(&state, &hosting_id)?;
+    if session.exists(&path).await? {
+        return Err(format!("Folder already exists: {}", path));
+    }
+    session.mkdir(&path).await
 }
 
 #[tauri::command]
 pub async fn bunny_storage_delete(
+    app: AppHandle,
     state: State<'_, BunnyStorageState>,
     hosting_id: String,
     path: String,
     is_dir: bool,
+    delete_id: Option<String>,
 ) -> Result<(), String> {
-    get_session(&state, &hosting_id)?
-        .delete_path(&path, is_dir)
-        .await
+    validate_remote_delete_path(&path)?;
+    let session = get_session(&state, &hosting_id)?;
+    emit_delete_progress(&app, delete_id.as_deref(), &path);
+    session.delete_path(&path, is_dir).await?;
+    emit_delete_progress(&app, delete_id.as_deref(), &path);
+    Ok(())
+}
+
+fn validate_remote_delete_path(path: &str) -> Result<(), String> {
+    let trimmed = path.trim_matches('/');
+    if trimmed.is_empty() {
+        return Err("Refusing to delete the remote root directory.".to_string());
+    }
+    if trimmed
+        .split('/')
+        .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+    {
+        return Err(format!("Invalid remote delete path: {}", path));
+    }
+    Ok(())
+}
+
+fn validate_remote_operation_path(path: &str) -> Result<(), String> {
+    let trimmed = path.trim_matches('/');
+    if trimmed.is_empty()
+        || trimmed
+            .split('/')
+            .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+    {
+        return Err(format!("Invalid remote path: {}", path));
+    }
+    Ok(())
+}
+
+fn emit_delete_progress(app: &AppHandle, delete_id: Option<&str>, path: &str) {
+    let Some(delete_id) = delete_id else {
+        return;
+    };
+    let item_name = path
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .last()
+        .unwrap_or(path)
+        .to_string();
+    let _ = app.emit(
+        "delete-progress",
+        DeleteProgress {
+            delete_id: delete_id.to_string(),
+            path: path.to_string(),
+            item_name,
+        },
+    );
 }
 
 #[tauri::command]
@@ -539,12 +646,28 @@ async fn resolve_remote_target(
 async fn should_skip_remote(
     session: &BunnyStorageSession,
     remote_path: &str,
+    local_path: &str,
     options: &Option<TransferOptions>,
 ) -> Result<bool, String> {
-    Ok(
-        options.as_ref().map(|opts| opts.overwrite.as_str()) == Some("skip")
-            && session.exists(remote_path).await?,
-    )
+    if !session.exists(remote_path).await? {
+        return Ok(false);
+    }
+
+    match options.as_ref().map(|opts| opts.overwrite.as_str()) {
+        Some("skip") => Ok(true),
+        Some("overwrite-older") => {
+            let local_mtime = std::fs::metadata(local_path)
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs() as i64);
+            Ok(matches!(
+                (local_mtime, session.file_mtime(remote_path).await),
+                (Some(local), Some(remote)) if remote >= local
+            ))
+        }
+        _ => Ok(false),
+    }
 }
 
 fn resolve_local_target(
@@ -562,9 +685,29 @@ fn resolve_local_target(
     }
 }
 
-fn should_skip_local(local_path: &str, options: &Option<TransferOptions>) -> bool {
-    std::path::Path::new(local_path).exists()
-        && options.as_ref().map(|opts| opts.overwrite.as_str()) == Some("skip")
+async fn should_skip_local(
+    session: &BunnyStorageSession,
+    remote_path: &str,
+    local_path: &str,
+    options: &Option<TransferOptions>,
+) -> Result<bool, String> {
+    if !std::path::Path::new(local_path).exists() {
+        return Ok(false);
+    }
+    match options.as_ref().map(|opts| opts.overwrite.as_str()) {
+        Some("skip") => Ok(true),
+        Some("overwrite-older") => {
+            let local_mtime = std::fs::metadata(local_path)
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs() as i64);
+            Ok(
+                matches!((local_mtime, session.file_mtime(remote_path).await), (Some(local), Some(remote)) if local >= remote),
+            )
+        }
+        _ => Ok(false),
+    }
 }
 
 async fn unique_remote_path(session: &BunnyStorageSession, path: &str) -> Result<String, String> {
@@ -606,10 +749,16 @@ fn numbered_path(path: &str, index: usize) -> String {
     }
 }
 
-fn collect_local_files(root: &str) -> Result<Vec<LocalDirEntry>, String> {
+fn collect_local_files(root: &str, follow_symlinks: bool) -> Result<Vec<LocalDirEntry>, String> {
     let mut entries = Vec::new();
-    for entry in walkdir::WalkDir::new(root) {
+    for entry in walkdir::WalkDir::new(root).follow_links(follow_symlinks) {
         let entry = entry.map_err(|e| e.to_string())?;
+        if entry.file_type().is_symlink() && !follow_symlinks {
+            return Err(format!(
+                "Symlink transfer disabled: {}",
+                entry.path().display()
+            ));
+        }
         if entry.file_type().is_dir() {
             continue;
         }
@@ -677,6 +826,27 @@ fn percentage(done: u64, total: u64) -> u8 {
         100
     } else {
         ((done as f64 / total as f64) * 100.0).clamp(0.0, 100.0) as u8
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_remote_delete_path;
+
+    #[test]
+    fn delete_path_rejects_root_and_traversal() {
+        for path in ["", "/", "folder/../file", "folder/./file", "folder//file"] {
+            assert!(
+                validate_remote_delete_path(path).is_err(),
+                "accepted {}",
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn delete_path_accepts_normal_target() {
+        assert!(validate_remote_delete_path("/folder/file.txt").is_ok());
     }
 }
 

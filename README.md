@@ -92,6 +92,6 @@ If you send a useful improvement or code contribution, I will be happy to includ
 
 ## Contact
 
-info@mylocalio.com
+info@loftp.space
 
 Bradacz

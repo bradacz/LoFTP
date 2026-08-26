@@ -14,20 +14,23 @@ export function useFileSelection() {
   const lastClickedRef = useRef<number>(-1);
 
   const toggle = useCallback((name: string, multi: boolean) => {
+    if (name === "..") return;
     setSelected((prev) => {
-      const next = new Set(multi ? prev : []);
-      if (next.has(name)) {
-        next.delete(name);
-      } else {
-        next.add(name);
-      }
+      if (!multi) return new Set([name]);
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
       return next;
     });
   }, []);
 
-  const rangeSelect = useCallback((name: string, files: FileItem[]) => {
+  const rangeSelect = useCallback((name: string, files: FileItem[], additive = false) => {
     const currentIndex = files.findIndex((f) => f.name === name);
     const lastIndex = lastClickedRef.current;
+    if (currentIndex >= 0 && files[currentIndex]?.name === "..") {
+      setSelected((prev) => (prev.size === 0 ? prev : new Set()));
+      return;
+    }
     if (lastIndex < 0 || currentIndex < 0) {
       // Fallback to single select
       setSelected(new Set([name]));
@@ -37,7 +40,7 @@ export function useFileSelection() {
     const start = Math.min(lastIndex, currentIndex);
     const end = Math.max(lastIndex, currentIndex);
     setSelected((prev) => {
-      const next = new Set(prev);
+      const next = new Set(additive ? prev : []);
       for (let i = start; i <= end; i++) {
         if (files[i] && files[i].name !== "..") {
           next.add(files[i].name);

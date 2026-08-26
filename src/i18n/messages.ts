@@ -85,6 +85,8 @@ export interface Messages {
     aiMissing: string;
     integrations: string;
     appearanceLightPanelsHint: string;
+    showHiddenFiles: string;
+    showHiddenFilesDesc: string;
     contextMenuShowShortcuts: string;
     aiModel: string;
     aiBaseUrl: string;
@@ -443,6 +445,7 @@ export interface Messages {
     combineOutputFile: string;
     localFilesOnly: string;
     localPanelOnly: string;
+    archiveReadOnly: string;
     remoteNotConnected: string;
   };
   toasts: {
@@ -562,7 +565,7 @@ const legalTemplate = {
     {
       heading: "Support and Contact",
       paragraphs: [
-        "Questions about payments, invoices, activation delivery or complaints may be sent through the contact form on www.mylocalio.com.",
+        "Questions about payments, invoices, activation delivery or complaints may be sent through the contact form on www.loftp.space.",
         "The provider handles customer requests without undue delay and aims to resolve legitimate complaints within a reasonable time.",
       ],
     },
@@ -571,7 +574,7 @@ const legalTemplate = {
     {
       heading: "Data Controller",
       paragraphs: [
-        "Localio Labs s.r.o., seated in the Czech Republic, acts as the controller of your personal data. Questions regarding processing can be submitted through the contact form on www.mylocalio.com.",
+        "Localio Labs s.r.o., seated in the Czech Republic, acts as the controller of your personal data. Questions regarding processing can be submitted through the contact form on www.loftp.space.",
       ],
     },
     {
@@ -607,7 +610,7 @@ const legalTemplate = {
       heading: "Your Rights",
       paragraphs: [
         "Under applicable privacy law, including GDPR where relevant, you may request access, rectification, erasure, restriction, portability or object to processing.",
-        "To exercise your rights, contact us via www.mylocalio.com. We respond without undue delay, no later than within the period required by law.",
+        "To exercise your rights, contact us via www.loftp.space. We respond without undue delay, no later than within the period required by law.",
       ],
     },
   ] as LegalSection[],
@@ -780,6 +783,8 @@ function createMessages(nativeName: string): Messages {
       aiMissing: "Missing",
       integrations: "Integrations",
       appearanceLightPanelsHint: "In light mode, file panels stay white for readability.",
+      showHiddenFiles: "Show hidden files",
+      showHiddenFilesDesc: "Show files and folders whose names begin with a dot in all panels.",
       contextMenuShowShortcuts: "Show keyboard shortcuts",
       aiModel: "Model",
       aiBaseUrl: "Base URL",
@@ -1138,6 +1143,7 @@ function createMessages(nativeName: string): Messages {
       combineOutputFile: "Output file",
       localFilesOnly: "This operation is available for local files only.",
       localPanelOnly: "Pasting files is available for a local panel only.",
+      archiveReadOnly: "Archive contents can be browsed and copied out, but direct changes inside the archive are not supported yet.",
       remoteNotConnected: "Remote panel is not connected.",
     },
     toasts: {
@@ -1287,6 +1293,8 @@ export const messages: Record<Locale, Messages> = {
       aiMissing: "Chybí",
       integrations: "Integrace",
       appearanceLightPanelsHint: "Ve světlém režimu zůstávají panely se soubory bílé kvůli čitelnosti.",
+      showHiddenFiles: "Zobrazovat skryté soubory",
+      showHiddenFilesDesc: "Zobrazí soubory a složky, jejichž název začíná tečkou, ve všech panelech.",
       contextMenuShowShortcuts: "Zobrazovat klávesové zkratky",
       aiModel: "Model",
       aiBaseUrl: "Base URL",
@@ -1645,6 +1653,7 @@ export const messages: Record<Locale, Messages> = {
       combineOutputFile: "Výstupní soubor",
       localFilesOnly: "Tato operace je dostupná jen pro lokální soubory.",
       localPanelOnly: "Vkládání souborů je dostupné jen pro lokální panel.",
+      archiveReadOnly: "Obsah archivu lze procházet a kopírovat ven, ale přímé změny uvnitř archivu zatím nejsou podporované.",
       remoteNotConnected: "Vzdálený panel není připojený.",
     },
     toasts: {
@@ -1733,7 +1742,7 @@ export const messages: Record<Locale, Messages> = {
         {
           heading: "Podpora a kontakt",
           paragraphs: [
-            "Dotazy k platbám, fakturám, doručení aktivace nebo reklamacím lze zaslat prostřednictvím kontaktního formuláře na www.mylocalio.com.",
+            "Dotazy k platbám, fakturám, doručení aktivace nebo reklamacím lze zaslat prostřednictvím kontaktního formuláře na www.loftp.space.",
             "Poskytovatel vyřizuje zákaznické požadavky bez zbytečného odkladu a oprávněné reklamace se snaží řešit v přiměřené lhůtě.",
           ],
         },
@@ -1813,15 +1822,15 @@ export const messages: Record<Locale, Messages> = {
         { heading: "Preis und Zahlung", paragraphs: ["Alle Preise werden vor Abschluss der Bestellung angezeigt. Die Zahlung wird über Stripe oder einen anderen benannten Zahlungsdienstleister verarbeitet.", "Der Anbieter speichert keine vollständigen Kartendaten."] },
         { heading: "Lieferung digitaler Inhalte", paragraphs: ["Der Aktivierungsschlüssel wird elektronisch an die bei der Zahlung angegebene E-Mail-Adresse geliefert.", "Die Zustellung erfolgt in der Regel sofort nach erfolgreicher Zahlung, kann sich in begründeten technischen Fällen jedoch verzögern."] },
         { heading: "Reklamationen und Rückerstattungen", paragraphs: ["Ist der gelieferte Aktivierungsschlüssel fehlerhaft oder kann er aufgrund eines Problems auf Seiten des Anbieters nicht aktiviert werden, kann der Kunde Abhilfe verlangen.", "Da es sich um digitale Inhalte ohne physischen Datenträger handelt, kann das Widerrufsrecht nach Beginn der Lieferung eingeschränkt sein, soweit dies gesetzlich zulässig ist."] },
-        { heading: "Support und Kontakt", paragraphs: ["Fragen zu Zahlungen, Rechnungen, Aktivierungszustellung oder Reklamationen können über das Kontaktformular auf www.mylocalio.com gesendet werden.", "Der Anbieter bearbeitet Kundenanfragen ohne unnötige Verzögerung."] },
+        { heading: "Support und Kontakt", paragraphs: ["Fragen zu Zahlungen, Rechnungen, Aktivierungszustellung oder Reklamationen können über das Kontaktformular auf www.loftp.space gesendet werden.", "Der Anbieter bearbeitet Kundenanfragen ohne unnötige Verzögerung."] },
       ],
       privacySections: [
-        { heading: "Verantwortlicher", paragraphs: ["Verantwortlicher für Ihre personenbezogenen Daten ist Localio Labs s.r.o. mit Sitz in der Tschechischen Republik. Fragen zur Verarbeitung können über www.mylocalio.com gestellt werden."] },
+        { heading: "Verantwortlicher", paragraphs: ["Verantwortlicher für Ihre personenbezogenen Daten ist Localio Labs s.r.o. mit Sitz in der Tschechischen Republik. Fragen zur Verarbeitung können über www.loftp.space gestellt werden."] },
         { heading: "Umfang der verarbeiteten Daten", paragraphs: ["Bei freiwilliger Zahlung und optionaler Aktivierung verarbeiten wir Ihre E-Mail-Adresse, den Aktivierungsschlüssel, die Art des Zahlungs- oder Aktivierungseintrags, die Installationskennung und technische Metadaten.", "Die Anwendung speichert Verbindungseinstellungen lokal auf Ihrem Gerät, einschließlich Zugangsdaten."] },
         { heading: "Zweck und Rechtsgrundlage", paragraphs: ["Ihre Daten werden zur Abwicklung freiwilliger Zahlungen, zur Zustellung des Aktivierungsschlüssels, für Support, Updates und zum Schutz der zugehörigen Dienste vor Missbrauch verarbeitet.", "Rechtsgrundlagen sind Vertragserfüllung, gesetzliche Pflichten und in begründeten Fällen berechtigte Interessen."] },
         { heading: "Empfänger und Auftragsverarbeiter", paragraphs: ["Zahlungen werden über Stripe, Inc. oder einen anderen Zahlungsdienstleister verarbeitet, der als unabhängiger Verantwortlicher auftritt.", "Zugangsdaten zu FTP/SFTP-Servern verbleiben ausschließlich auf Ihrem Gerät."] },
         { heading: "Speicherdauer", paragraphs: ["Zahlungs- oder aktivierungsbezogene Daten werden für die Dauer des Vertragsverhältnisses und anschließend entsprechend gesetzlicher Aufbewahrungspflichten gespeichert.", "Lokal gespeicherte Daten verbleiben auf Ihrem Gerät, bis Sie sie manuell entfernen oder die Anwendung deinstallieren."] },
-        { heading: "Ihre Rechte", paragraphs: ["Nach geltendem Datenschutzrecht, einschließlich DSGVO, haben Sie Rechte auf Auskunft, Berichtigung, Löschung, Einschränkung, Übertragbarkeit und Widerspruch.", "Zur Ausübung Ihrer Rechte kontaktieren Sie uns über www.mylocalio.com."] },
+        { heading: "Ihre Rechte", paragraphs: ["Nach geltendem Datenschutzrecht, einschließlich DSGVO, haben Sie Rechte auf Auskunft, Berichtigung, Löschung, Einschränkung, Übertragbarkeit und Widerspruch.", "Zur Ausübung Ihrer Rechte kontaktieren Sie uns über www.loftp.space."] },
       ],
     },
   }),

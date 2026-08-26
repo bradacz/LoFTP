@@ -65,6 +65,8 @@ interface ToolbarProps {
   onCreateArchive: () => void;
   hasSelection: boolean;
   canRename: boolean;
+  canNewFolder?: boolean;
+  canDelete?: boolean;
   canOpenArchive: boolean;
   canCreateArchive: boolean;
   isComparing?: boolean;
@@ -90,6 +92,8 @@ export function Toolbar({
   onCreateArchive,
   hasSelection,
   canRename,
+  canNewFolder = true,
+  canDelete,
   canOpenArchive,
   canCreateArchive,
   isComparing,
@@ -115,13 +119,13 @@ export function Toolbar({
 
       <div className="w-px h-5 bg-divider mx-1" />
 
-      <ToolbarIconButton icon={<RiFolderAddFill className={toolbarIconClassName} />} label={t("toolbar.folder")} onClick={onNewFolder} />
+      <ToolbarIconButton icon={<RiFolderAddFill className={toolbarIconClassName} />} label={t("toolbar.folder")} onClick={onNewFolder} disabled={!canNewFolder} />
       <ToolbarIconButton icon={<RiEdit2Fill className={toolbarIconClassName} />} label={t("toolbar.rename")} onClick={onRename} disabled={!canRename} />
       <ToolbarIconButton
         icon={<RiDeleteBin6Fill className={toolbarIconClassName} />}
         label={t("toolbar.delete")}
         onClick={onDelete}
-        disabled={!hasSelection}
+        disabled={canDelete === undefined ? !hasSelection : !canDelete}
         className="text-destructive hover:text-destructive"
       />
 

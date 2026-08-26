@@ -1,6 +1,8 @@
 import { useEffect, useCallback } from "react";
 
 interface ShortcutActions {
+  disabled?: boolean;
+  hasSelection: boolean;
   onView: () => void;
   onEdit: () => void;
   onCopy: () => void;
@@ -18,6 +20,8 @@ interface ShortcutActions {
 export function useKeyboardShortcuts(actions: ShortcutActions) {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      if (actions.disabled) return;
+
       // Ignore if inside input/textarea
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -73,7 +77,8 @@ export function useKeyboardShortcuts(actions: ShortcutActions) {
           break;
         case key === "Backspace":
           e.preventDefault();
-          actions.onNavigateUp();
+          if (actions.hasSelection) actions.onDelete();
+          else actions.onNavigateUp();
           break;
       }
     },

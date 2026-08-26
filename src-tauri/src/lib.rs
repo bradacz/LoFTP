@@ -33,8 +33,11 @@ pub fn run() {
             // Filesystem
             commands::filesystem::fs_list,
             commands::filesystem::fs_get_home,
+            commands::filesystem::fs_get_temp_dir,
             commands::filesystem::fs_mkdir,
             commands::filesystem::fs_delete,
+            commands::filesystem::fs_remove,
+            commands::filesystem::fs_delete_many,
             commands::filesystem::fs_is_dir,
             commands::filesystem::fs_rename,
             commands::filesystem::fs_copy,

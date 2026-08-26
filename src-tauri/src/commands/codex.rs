@@ -1,4 +1,5 @@
 use crate::commands::bunny_storage::BunnyStorageState;
+use crate::commands::filesystem::fs_delete;
 use crate::commands::ftp::FtpState;
 use crate::commands::sftp::SftpState;
 use crate::models::file_item::FileItem;
@@ -2568,8 +2569,7 @@ async fn execute_plan(app: &AppHandle, plan: &CodexPlan) -> Result<Value, String
                     .ok_or_else(|| "Delete local action is missing localPath".to_string());
                 match local_path {
                     Ok(local_path) => match resolve_allowed_local_path(app, local_path) {
-                        Ok(local_path) => fs::remove_file(&local_path)
-                            .map_err(|e| format!("Delete local file failed: {}", e)),
+                        Ok(local_path) => fs_delete(app.clone(), local_path),
                         Err(error) => Err(error),
                     },
                     Err(error) => Err(error),
@@ -2711,6 +2711,7 @@ async fn remote_delete_file(
     hosting_id: &str,
     remote_path: &str,
 ) -> Result<(), String> {
+    validate_remote_delete_path(remote_path)?;
     match load_hosting_protocol(hosting_id)? {
         Protocol::Ftp | Protocol::Ftps => {
             let state = app.state::<FtpState>();
@@ -2740,6 +2741,20 @@ async fn remote_delete_file(
             session.delete(remote_path).await
         }
     }
+}
+
+fn validate_remote_delete_path(path: &str) -> Result<(), String> {
+    let trimmed = path.trim_matches('/');
+    if trimmed.is_empty() {
+        return Err("Refusing to delete the remote root directory.".to_string());
+    }
+    if trimmed
+        .split('/')
+        .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+    {
+        return Err(format!("Invalid remote delete path: {}", path));
+    }
+    Ok(())
 }
 
 fn load_hosting_protocol(hosting_id: &str) -> Result<Protocol, String> {
@@ -2905,5 +2920,21 @@ fn audit(tool: &str, ok: bool, error: Option<&str>) {
     });
     if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(file, "{}", value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_remote_delete_path;
+
+    #[test]
+    fn codex_delete_path_rejects_root_and_traversal() {
+        for path in ["", "/", "folder/../file", "folder/./file", "folder//file"] {
+            assert!(
+                validate_remote_delete_path(path).is_err(),
+                "accepted {}",
+                path
+            );
+        }
     }
 }
